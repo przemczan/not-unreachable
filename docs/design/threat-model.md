@@ -41,7 +41,7 @@ whole list against the built app and OWASP ASVS 5.0 level 2.
 ```
  Internet ──TLS──▶ reverse proxy ──HTTP (loopback)──▶ not-unreachable (service user)
                                                      │        │            │
-                                         SQLite + data dir   local folders  /var/lib/not-unreachable/mounts/* (cifs)
+                                         SQLite + data dir   local folders  /srv/not-unreachable/mounts/* (cifs)
                                                      │                          ▲
                                                      └── D-Bus (polkit) ──▶ mount helper (root, one oneshot unit per share)
                                                                                 │
@@ -158,7 +158,7 @@ else. Steps:
 | The steps above. | Table-driven tests: `../`, `%2e%2e/` (decoded by Fastify first), `a/../../b`, `..\\`, absolute paths, NUL, overlong names, NFD names, a symlink to `/etc`, a symlink to a sibling home, a FIFO, a device, and a race test that swaps a folder for a symlink between resolve and open. | Resources |
 | Hard links inside a resource that point outside it can only be made by someone with shell access (no route creates links). Documented as a residual risk for the local OS attacker; the install docs say to map folders that other OS users cannot write to. | Review. | Resources, Review |
 | SMB mounts use `nosuid,nodev,noexec` and fixed `uid`/`gid` (see [smb.md](smb.md#mount-options)), so a share cannot add a device file or a setuid binary to the host. | Install-script test of the mount options. | Install |
-| The lint rule `no-restricted-imports` forbids `node:fs` and `node:fs/promises` outside `modules/storage`, `modules/platform` and the upload staging code. | Lint. | Skeleton |
+| The lint rule `no-restricted-imports` forbids `node:fs` and `node:fs/promises` outside `modules/storage`, `modules/platform`, the files module's staging store (`modules/files/staging.ts`) and the resources module's mount-request writer (`modules/resources/mount-requests.ts`). | Lint. | Skeleton |
 
 ## T6. Secrets at rest: SMB credentials, TOTP seeds, SMTP and SSO secrets
 
@@ -169,7 +169,7 @@ else. Steps:
 | **Rotation**: `not-unreachable rotate-key` (run as root with the service stopped) re-encrypts every envelope under a new key id. | CLI integration test. | Skeleton |
 | Secrets never leave the server: the API returns `smbPasswordSet: true`, never the value. Editing a resource without typing a new password keeps the old one. | Contract test: no response schema has a secret field. | Resources, 2FA, SSO |
 | Passwords, recovery codes and share-link passwords are **hashed** (argon2id), not encrypted. Session, invitation, reset, email-code and unlock tokens are stored as SHA-256 (they are already 256-bit random, so a slow hash adds nothing). | Unit tests. | Accounts, 2FA, Invitations, Share links |
-| SMB passwords reach the kernel through a credentials file the mount helper writes (`root 0600` under `/run`), which it deletes right after the mount (see [smb.md](smb.md#adding-a-share-at-runtime)). They never appear on a command line or in the environment. | Install-script test. | Resources, Install |
+| SMB passwords reach the kernel through two short-lived files on tmpfs: the app's request file (`0600`, service user) and the credentials file the mount helper writes (`root 0600`). The helper deletes both within the same run, whether the mount works or not (see [smb.md](smb.md#adding-a-share-at-runtime)). Passwords never appear on a command line or in the environment. | Helper test: after a successful and a failed mount, neither file exists. | Resources, Install |
 
 ## T7. Upload abuse
 
@@ -188,11 +188,11 @@ else. Steps:
 
 | Mitigation | Test | Owner |
 |---|---|---|
-| **Token**: 32 random bytes (256 bits), base64url (43 characters), in the path: `/s/<token>`. Looked up by SHA-256. The token is also kept encrypted (T6), so the admin can copy the link again; it is never logged (pino redacts `/s/*`). | Unit tests. | Share links |
+| **Token**: 32 random bytes (256 bits), base64url (43 characters), in the path: `/s/<token>`. Looked up by SHA-256. The token is also kept encrypted (T6), so the admin can copy the link again. It is never logged: pino cuts it out of `/s/<token>` and `/api/v1/public/share-links/<token>/…` alike. | Unit test of the redaction over both paths. | Share links |
 | `Referrer-Policy: no-referrer` everywhere, so the token never leaks through `Referer`. | Header test. | Skeleton |
 | **Link password**: optional, at least 8 characters, hashed with argon2id. A correct password creates an **unlock**: a random token in the cookie `__Host-nu_unlock_<linkId>` (`Secure; HttpOnly; SameSite=Strict; Path=/`), valid 12 hours or until the link expires, stored as SHA-256. Changing or removing the password deletes every unlock. | Integration test. | Share links |
 | **Expiry**: default 7 days, chosen when the link is made; "No expiry" exists but has to be picked on purpose, and the link list marks those links. Expiry is checked on every request, including each range request of a download in progress; an expired link answers like an unknown one (T1). | Clock-injected test. | Share links |
-| **Rate limits** on the public share API: unknown or invalid tokens: 20 per minute per IP (IPv6 by /64), then 429 for 15 minutes. Wrong link password: 5 per 15 minutes per IP per link, and 50 per hour per link across all IPs. After that the link locks for an hour and an audit event (`share-link.locked`) is shown on the admin's dashboard. | Integration tests. | Share links |
+| **Rate limits** on the public share API: unknown or invalid tokens: 20 per minute per IP (IPv6 by /64), then 429 for 15 minutes. Wrong link password: 5 per 15 minutes per IP per link, and 50 per hour per link across all IPs. After that the link locks for an hour: the audit log records `share-link.locked`, and the Share links list shows the link with a **Locked** badge until the hour is over. | Integration tests. | Share links |
 | **Scope**: a folder link uses the shared folder as the root for T5, so `..` and symlinks cannot leave it. A link for a file allows only that file. | Path-safety tests run through the share API. | Share links |
 | **Revocation** takes effect on the next request, including a download in progress at its next range request. | Integration test. | Share links |
 | **Download cost**: at most 4 concurrent downloads per link per IP. Each download is counted, and the count is shown in the link list. | Integration test. | Share links |
@@ -200,7 +200,8 @@ else. Steps:
 
 *Rejected:* putting the token in the URL fragment, which keeps it out of proxy
 logs. Resumable downloads by download managers need a plain, stable URL. The
-install docs instead show how to keep `/s/*` out of the proxy's access log.
+install docs instead show how to keep `/s/*` and `/api/v1/public/share-links/*`
+out of the proxy's access log.
 
 ## T9. SSO account linking
 
@@ -256,7 +257,7 @@ log.
 |---|---|---|
 | An append-only table. The app has no update route and no delete route, other than the retention purge. The UI is read-only, with filters (time, actor, action, outcome) and CSV export. | Contract test. | Accounts (module), each feature Task for its own events |
 | **Recorded for each event**: time, actor kind (`account`, `share-link`, `anonymous`, `system`) and id, action, target kind and id, outcome (`succeeded`/`failed`/`denied`), IP, user agent (first 256 characters), and details as JSON. **Never recorded**: passwords, codes, tokens, secrets, file contents. Paths are recorded. | Unit test: details schemas per action have no secret fields. | each owner |
-| **Events** (at least): `sign-in.succeeded` / `.failed` / `.locked`, `sign-out`, `session.revoked`, `second-factor.added` / `.removed` / `.failed` / `.recovery-code-used`, `password.changed`, `password-reset-link.issued` / `.used`, `invitation.created` / `.accepted` / `.revoked`, `account.disabled` / `.deleted`, `linked-sign-in.added` / `.removed`, `sso-provider.changed`, `settings.changed` (which keys, not secret values), `resource.added` / `.changed` / `.removed` / `.mount-failed`, `home-root.changed`, `file.uploaded` / `.deleted`, `share-link.created` / `.changed` / `.revoked` / `.downloaded` / `.password-failed` / `.locked`, `rate-limit.triggered` (once per key per window), `system.started` / `.migrated` / `.key-rotated`. File downloads by the admin and by users are not recorded (too noisy); share-link downloads are. | Integration test per event in its owner Task. | each owner |
+| **Events** (at least): `setup-link.issued`, `setup.completed`, `account.created` / `.enabled`, `sign-in.succeeded` / `.failed` / `.locked`, `sign-out`, `session.revoked`, `second-factor.added` / `.removed` / `.failed` / `.recovery-code-used`, `password.changed`, `password-reset-link.issued` / `.used`, `invitation.created` / `.accepted` / `.revoked`, `account.disabled` / `.deleted`, `linked-sign-in.added` / `.removed`, `sso-provider.changed`, `settings.changed` (which keys, not secret values), `resource.added` / `.changed` / `.removed` / `.mount-failed`, `home-root.changed`, `file.uploaded` / `.deleted`, `share-link.created` / `.changed` / `.revoked` / `.downloaded` / `.password-failed` / `.locked`, `rate-limit.triggered` (once per key per window), `system.started` / `.migrated` / `.key-rotated`. File downloads by the admin and by users are not recorded (too noisy); share-link downloads are. | Integration test per event in its owner Task. | each owner |
 | **Retention**: 365 days by default (setting, 30–3650). A daily job purges older events and records `audit.purged` with the count. | Clock-injected test. | Accounts |
 | Events are also written to the log (journald) as JSON, so an attacker with admin access to the app cannot remove the copy on the host. | Test that `record()` logs. | Accounts |
 
@@ -276,15 +277,17 @@ Owner: **Skeleton**; test: a header snapshot test over one route of each kind.
 
 - `pnpm-lock.yaml` committed; CI installs with `--frozen-lockfile`.
 - pnpm 10's lifecycle scripts are off by default; `onlyBuiltDependencies`
-  allows exactly `better-sqlite3` (and none if its prebuild is found).
+  allows exactly `better-sqlite3`, whose install script fetches its prebuilt
+  binary (or compiles it where none exists). @node-rs/argon2 needs no script:
+  its binaries come as optional dependencies.
 - `minimumReleaseAge: 4320` (3 days) in `pnpm-workspace.yaml`, so a freshly
   hijacked release is not picked up the day it is published.
 - Few dependencies: each new runtime dependency is named in the Task that adds
   it, with why.
 - CI runs `pnpm audit --prod --audit-level=high` and fails on findings.
   Renovate opens grouped weekly updates; security updates come at once.
-- The release tarball has a SHA-256 checksum and a CycloneDX SBOM
-  (`pnpm sbom` or `@cyclonedx/cdxgen`).
+- Each release tarball has a SHA-256 checksum and a CycloneDX SBOM, made by
+  `@cyclonedx/cdxgen` from the lockfile.
 
 ## T14. The local OS attacker and the mount helper
 
@@ -292,8 +295,8 @@ Owner: **Skeleton**; test: a header snapshot test over one route of each kind.
 |---|---|---|
 | The service runs as the system user `not-unreachable` (no shell, no login) with the systemd hardening in [deployment.md](deployment.md#systemd-unit). Its data directory is `0700`; config `0640 root:not-unreachable`; the master key is reachable only through `LoadCredential=`. | `systemd-analyze security not-unreachable` exposure score ≤ 2.0, checked by the install script. | Install |
 | The service listens on `127.0.0.1:8480` by default, never on `0.0.0.0` unless configured. | Config test. | Skeleton |
-| The mount helper is the only root code. Polkit lets the service user start and stop **only** units matching `not-unreachable-mount@<uuid>.service`. The helper validates the share id as a UUID, reads its request from a path it derives itself, validates every field against strict patterns, and sets every mount option itself (see [smb.md](smb.md)). | Install-script tests with hostile requests (option injection like `host,uid=0`, `../` in the share name). | Resources, Install |
-| A SMB server on a hostile LAN: mounts require SMB 3.1.1 (`vers=3.1.1`); signing is required, and encryption (`seal`) is on by default, so file contents and credentials are not in clear text on the wire. | Install-script test of the options. | Resources |
+| The mount helper is the only root code. Polkit lets the service user start and stop **only** units matching `not-unreachable-mount@<uuid>.service`. The helper validates the share id as a UUID, opens its request from a path it derives itself with `O_NOFOLLOW` and checks the descriptor (regular file, owner, mode, size), validates every field against strict patterns, and sets every mount option itself. It **never writes into a directory the service user controls**: the result is its exit code, and mount points are under the root-owned `/srv/not-unreachable/mounts` (see [smb.md](smb.md#what-happens-underneath)). | Helper tests as root with hostile requests: option injection like `host,uid=0`, `../` in the share name, a symlinked or swapped request file, a FIFO, a file owned by another user. | Resources, Install |
+| An SMB server on a hostile LAN: SMB 3.1.1 by default; signing (`sign`) is always required; encryption (`seal`) is on by default, and the UI warns wherever it is off. With it on, file contents and credentials are not in clear text on the wire. SMB 3.0 and 2.1 are offered only for older servers, and only when the admin picks them. | Helper test of the options per protocol choice. | Resources |
 
 ## T15. Open redirects, Host header and SSRF
 

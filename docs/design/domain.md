@@ -16,7 +16,7 @@ this glossary first.
 | **Account** | The record behind an admin or a user: username, email, display name, role, status (`active` / `disabled`) and its sign-in methods. The **username** is unique, lowercase `[a-z0-9._-]{3,32}`, and cannot change after the account is created, because the home folder is named after it. |
 | **Invitation** | A single-use link the admin creates so that one new user can create an account. It has an optional email it is meant for, an expiry (default 7 days), and a state: `pending`, `accepted`, `expired` or `revoked`. It is the only way a user account comes into being. |
 | **Password reset link** | A single-use link the admin issues for an existing account. It works like an invitation, but sets a new password for that account. There is no self-service reset by email in this Initiative (see the [task map](README.md#task-map)). |
-| **Sign-in** | Proving who you are: with a password, a passkey (passwordless), or an SSO provider, followed by a second factor when the account has one or the admin requires one. |
+| **Sign-in** | Proving who you are: with a password or an SSO provider, followed by a second factor when the account has one or the admin requires one; or with a passkey alone (passwordless), which already counts as both steps. |
 | **Second factor** | Something an account adds to its password: an **authenticator app** (TOTP), **email codes**, or a **passkey**. "Two-step sign-in" in the UI is the same as 2FA. |
 | **Authenticator app** | A TOTP second factor: a secret shared with an app on the user's phone, shown once as a QR code. |
 | **Email code** | A one-time 6-digit code sent by email, valid for 10 minutes, for one sign-in. Available only when the admin has set up SMTP. |
@@ -50,8 +50,9 @@ this glossary first.
   and a user to `/files`.
 - Both interfaces live in one SPA build, as two lazy route trees, so a user's
   browser never downloads the admin interface's code.
-- Separation is enforced **on the server**: every `/api/v1/admin/*` route has
-  the `requireRole("admin")` guard. User routes are scoped to the caller's home
+- Separation is enforced **on the server**: every `/api/v1/admin/*` route's
+  contract requires the `admin` role, and a contract test fails if one does
+  not (see rule 5 under [Server modules](#server-modules)). User routes are scoped to the caller's home
   by the files module, never by a path the client sends. The SPA split is for
   the user's convenience, not for security.
 - Shared screens: `/sign-in`, `/invitation/:token` (create account),
@@ -63,7 +64,7 @@ this glossary first.
 |---|---|
 | Files: every resource, browse, upload, download, delete, create share link | Files: own home only, browse, upload, download, delete |
 | Share links: list, edit expiry/password, revoke | – |
-| Users: list, quota, disable, delete, issue password reset link | – |
+| Users: list, quota, disable, delete, issue password reset link, remove second factors | – |
 | Invitations: create, list, revoke | – |
 | Resources: add/edit/remove local folder or SMB share, test, choose home root | – |
 | Settings: SMTP, SSO providers, security policy, limits, retention | – |
@@ -89,26 +90,39 @@ modules/<name>/
    (`modules/x/repository`) are lint errors (`no-restricted-imports`).
 2. A module reads and writes only its own tables. It reaches other data through
    that module's service.
-3. Dependencies point downwards in the table below; cycles are lint errors
-   (`import/no-cycle`).
-4. Routes never touch `fs` or the database directly. Only `storage` touches the
-   file system, and only through a `ContainedPath` (below).
+3. A module depends only on modules in lower layers of the table below; cycles
+   are lint errors (`import/no-cycle`).
+4. Routes never touch `fs` or the database directly. Files inside resources
+   are reached only through `storage` and a `ContainedPath` (below). The only
+   other code allowed to import `node:fs` is `platform` (config, database
+   file), the files module's upload staging store and the resources module's
+   mount-request writer, all outside every resource (lint rule in
+   [T5](threat-model.md#t5-path-traversal-symlinks-and-special-files)).
+5. **Guards are not imported by modules.** Each route's contract in
+   `packages/contracts` states who may call it (`public`, `pendingSecondFactor`,
+   `user`, `admin`) and whether it needs a recent sign-in. The composition root
+   (`apps/server/src/app.ts`) registers the `sessions` plugin before every
+   module; it resolves the caller's session and enforces the contract's
+   requirements before any handler runs. Handlers read the caller from the
+   request context. So a module needs `sessions` only when it changes
+   sessions itself, and a route without a stated requirement can't be
+   registered.
 
 | Layer | Module | Owns | Depends on |
 |---|---|---|---|
-| 0 | `platform` | config loading (zod), database handle and migrations, logger, clock, `secrets` (AES-GCM envelope), `rate-limits`, problem+json errors, request context (IP, account) | – |
+| 0 | `platform` | config loading (zod), database handle and migrations, logger, clock, `secrets` (AES-GCM envelope), `rate-limits`, problem+json errors, request context (IP, caller) | – |
 | 1 | `audit` | `audit_events`; `record(event)`; retention purge job | platform |
 | 1 | `mail` | SMTP settings (encrypted password), `send(template, to)` | platform |
 | 1 | `settings` | `settings` table: typed instance settings | platform |
+| 1 | `storage` | `resolveInResource()` / `ContainedPath`, safe open, list, stat, delete, move-into-place | platform (no other module) |
 | 2 | `accounts` | `accounts`, password hashing, first admin, disable/delete | platform, audit, settings |
-| 2 | `sessions` | `sessions`, cookie handling, `requireSession` / `requireRole` / `requireRecentSignIn` guards | platform, audit, accounts |
+| 3 | `sessions` | `sessions`, cookie handling, the guard hook that enforces each contract's requirements, revoking sessions | platform, audit, accounts |
 | 3 | `second-factors` | `totp_factors`, `email_codes`, `recovery_codes`, `passkeys` | platform, audit, mail, accounts |
 | 3 | `sso` | `sso_providers`, `linked_sign_ins`; OIDC/GitHub flows | platform, audit, accounts, settings |
 | 3 | `invitations` | `invitations`, `password_reset_links` | platform, audit, mail, accounts, settings |
 | 3 | `resources` | `resources`, home root, homes, SMB mount control (talks to the mount helper) | platform, audit, settings, storage |
-| 2 | `storage` | `resolveInResource()` / `ContainedPath`, safe open, list, stat, delete, move-into-place | platform (no other module) |
 | 4 | `sign-in` | the sign-in flow across password, passkey, SSO and second factor; enumeration-safe answers; per-account failure counters | accounts, sessions, second-factors, sso, invitations, audit |
-| 4 | `files` | browse, Range downloads, delete, tus uploads (`uploads` table, staging, quotas, cleanup job) | resources, storage, sessions, audit, settings |
+| 4 | `files` | browse, Range downloads, delete, tus uploads (`uploads` table, staging, quotas, cleanup job) | resources, storage, audit, settings |
 | 5 | `share-links` | `share_links`, `share_link_unlocks`, public share page API | files, storage, resources, accounts, audit |
 
 `storage` sits on its own so its correctness can be proven alone. It knows
@@ -190,4 +204,5 @@ marked # hold SHA-256 hashes, never the token itself.
 - Pagination: cursor-based (`?cursor=&limit=`, at most 200) for the audit log,
   share links and large folders.
 - The public share API lives apart from the rest, under `/api/v1/public/share-links/:token/*`,
-  with its own rate limits and no session.
+  with its own rate limits and no session. Its token is cut out of every log
+  line, as for `/s/:token` (threat model, T8).

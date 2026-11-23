@@ -53,9 +53,10 @@ Browser ──HTTPS──▶ Caddy / nginx ──HTTP 127.0.0.1:8480──▶ no
 
 ## Commands
 
-The skeleton Task (Task 94776ed7-0244-4ba0-bd52-a6cfbac33271) **creates** these
-scripts in the root `package.json`. Once it has landed, set them on the
-Project's page:
+The [skeleton Task](/tasks/94776ed7-0244-4ba0-bd52-a6cfbac33271) **creates**
+these scripts in the root `package.json`. Once it has landed, set them on the
+Project's page. The page has Install, Build, Lint and Test; typecheck and the
+format check run inside Lint, as in the Office's other TypeScript Projects.
 
 | Project setting | Command |
 |---|---|
@@ -63,13 +64,13 @@ Project's page:
 | Build | `pnpm build` |
 | Lint | `pnpm lint && pnpm typecheck && pnpm format:check` |
 | Test | `pnpm test` |
-| Install inputs | `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `package.json`, `apps/*/package.json`, `packages/*/package.json`, `.nvmrc`, `.npmrc` |
+| Install inputs | `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `package.json`, `apps/*/package.json`, `packages/*/package.json`, `deploy/mount-helper/package.json`, `.nvmrc`, `.npmrc` |
 
 What each root script runs:
 
 | Script | Runs |
 |---|---|
-| `pnpm build` | `pnpm -r build`: contracts and design-system (`tsc -b`), web (`vite build`), server (`tsc -b`, then copies `apps/web/dist`) |
+| `pnpm build` | `pnpm -r build`: contracts and design-system (`tsc -b`), web (`vite build`), server (`tsc -b`, then copies `apps/web/dist`), and the mount helper (`deploy/mount-helper`, bundled into one `.mjs` file) |
 | `pnpm lint` | `oxlint --type-aware` (with the design-system adherence rules) and the brand check (no NotNullSoft names) |
 | `pnpm typecheck` | `tsc -b --noEmit` over the project references |
 | `pnpm format:check` | `prettier --check .` |
@@ -89,7 +90,7 @@ recommendations only; this Task changes no other Task.**
 | [Invitations and user management](/tasks/4723ccf9-fc28-4532-a186-8f099f09903e) | `invitations` module; invitation page; Users and Invitations screens; quotas per user | **Add admin-issued password reset links**: nothing in the Initiative covers a user who forgot their password. **Make it wait for the Resources Task too**, or move home creation into that Task: it creates homes, which needs the home root. |
 | [Two-factor authentication](/tasks/378c8142-5b80-4646-bd76-3455d34a1da1) | `second-factors` (TOTP, email codes, recovery codes), `mail` module and SMTP settings, the `pending second factor` session state and guard, "Require two-step sign-in" (on for the admin by default), the admin's "Remove second factors" action, security notice emails (T10) | Add the `mail` module and the SMTP settings screen explicitly; other Tasks (invitations, lockout notices) reuse it. Add forcing the admin to enrol at the next sign-in, which closes the gap left by first-run setup. |
 | [Passkeys](/tasks/520bfe57-4e16-448c-87ba-916a6e9ace9e) | Passkey registration, passkey as second factor, passwordless sign-in | **Make it wait for the 2FA Task**: a passkey as second factor plugs into the pending-session step that Task builds. |
-| [Mapped resources](/tasks/397cb6b6-e258-4e8d-8143-3ac08e74230a) | `storage` (path safety, T5), `resources` module, home root and homes, local folders (`allow-folder`), SMB shares with the mount helper, polkit rule and the request/result protocol (T6, T14) | **Consider splitting SMB off** into "SMB shares: mount helper and admin screens". The privileged helper deserves its own review, and local folders + path safety can land first and unblock Files sooner. |
+| [Mapped resources](/tasks/397cb6b6-e258-4e8d-8143-3ac08e74230a) | `storage` (path safety, T5), `resources` module, home root and homes, local folders (`allow-folder`), SMB shares with the mount helper (TypeScript, run as root by systemd), polkit rule and the request file and exit-code protocol (T6, T14) | **Consider splitting SMB off** into "SMB shares: mount helper and admin screens". The privileged helper deserves its own review, and local folders + path safety can land first and unblock Files sooner. |
 | [Single sign-on](/tasks/7bd5a230-b9f0-4679-aac9-fbc0909fe528) | `sso` module, providers screen, linked sign-ins, invitation-by-SSO (T9) | Also wait for the 2FA Task, so an SSO sign-in goes through the second-factor step from day one (T9). |
 | [Files](/tasks/65765533-4396-4ae9-a6da-6780c2b84a29) | `files` module: browse, Range downloads, delete, tus uploads, staging, quotas, cleanup jobs (T7); the file browser and upload queue in both interfaces | No change. The upload queue, drop zone and quota meter components go into the design-system package. |
 | [Share links](/tasks/ccb26ec8-a7f9-46fa-8d98-c9f55fa4d4a1) | `share-links` module, unlocks, the public share page, its rate limits and audit events (T8) | No change. |

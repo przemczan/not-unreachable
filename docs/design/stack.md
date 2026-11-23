@@ -41,7 +41,7 @@ tus. One piece is replaced (Node 22 → Node 24). The rest is kept, and the gaps
 | SSO | openid-client | 6.x |
 | Email | **nodemailer** over SMTP | 7.x |
 | Resumable uploads | @tus/server + @tus/file-store, tus-js-client | 2.x / 4.x |
-| Logging | pino (Fastify's logger) | 9.x |
+| Logging | pino (Fastify's logger) | the line Fastify 5 depends on |
 | Lint | **oxlint** (+ type-aware rules) | 1.x |
 | Format | Prettier | 3.x |
 | Unit / integration tests | Vitest | 4.x |
@@ -160,9 +160,11 @@ tus. One piece is replaced (Node 22 → Node 24). The rest is kept, and the gaps
   Routing: React Router 7 in data mode. Server state: TanStack Query 5.
   No component library other than our design-system package
   (see [design-system.md](design-system.md)).
-- **Reasons.** This is the stack the NotNullSoft Admin design system is written
-  for: its tokens map to Tailwind 4 `@theme` variables and its icons are lucide.
-  So the design system comes over without being rewritten. React Router's lazy
+- **Reasons.** The NotNullSoft Admin design system is React with lucide icons,
+  and its tokens are CSS custom properties that map onto Tailwind 4 `@theme`
+  variables. So its tokens come over as they are, and its components port to
+  this stack prop for prop (they are rewritten with Tailwind classes to meet our
+  CSP; see [design-system.md](design-system.md#how-it-comes-into-the-repo)). React Router's lazy
   routes split the admin and user interfaces into separate chunks. TanStack
   Query handles caching, retries and invalidation after uploads and deletes.
 - **Rejected.** *Next.js / Remix SSR*: a server-rendering runtime we don't need
@@ -278,11 +280,13 @@ tus. One piece is replaced (Node 22 → Node 24). The rest is kept, and the gaps
 
 ## Logging: pino
 
-- **Decision.** Fastify's built-in pino 9.x, JSON to stdout (journald). Redacted
+- **Decision.** Fastify's built-in pino (not a direct dependency, so it can't
+  drift from Fastify's), JSON to stdout (journald). Redacted
   paths: `req.headers.cookie`, `req.headers.authorization`,
   `res.headers["set-cookie"]`, and every body field named `password`,
-  `code`, `secret` or `token`. Share-link tokens are cut out of logged URLs
-  (`/s/<redacted>`).
+  `code`, `secret` or `token`. Share-link tokens are cut out of logged URLs,
+  both the share page and the public share API
+  (`/s/<redacted>`, `/api/v1/public/share-links/<redacted>/…`).
 - **Reasons.** Already in Fastify, fast, structured; journald keeps it rotated.
 - **Rejected.** *winston*: slower, and adds nothing here.
 
@@ -294,9 +298,13 @@ tus. One piece is replaced (Node 22 → Node 24). The rest is kept, and the gaps
   through `oxlint --type-aware` (`no-floating-promises`,
   `no-misused-promises`). Prettier 3 formats. `tsc -b` checks types across the
   project references.
-- **Reasons.** The design system's adherence config is an oxlint config, so
-  using oxlint brings it over unchanged. oxlint is fast enough to run on save
-  and in CI on every push.
+- **Reasons.** notnullsoft-admin enforces its design system with an oxlint
+  config (`_adherence.oxlintrc.json`), so its rules can carry over without
+  being translated. oxlint is fast enough to run on save and in CI on every
+  push. Its JS plugin API is ESLint-compatible, so the few design-system rules
+  of our own are ordinary ESLint-style rule files (see
+  [design-system.md](design-system.md#enforcement) for the fallback if that API
+  isn't stable in the line the skeleton installs).
 - **Rejected.** *ESLint 9*: would mean translating the adherence config and
   running a second, slower linter. *Biome*: its lint rule set and plugin
   system don't cover the adherence rules.
@@ -327,20 +335,25 @@ not-unreachable/
 │  ├─ contracts/           @not-unreachable/contracts – zod schemas + route table, no runtime deps beyond zod
 │  ├─ design-system/       @not-unreachable/design-system – rebranded tokens, Tailwind theme, components, lint rules
 │  └─ tsconfig/            shared tsconfig bases
-├─ deploy/                 systemd units, polkit rule, mount helper, Caddy/nginx examples, install script
+├─ deploy/                 systemd units, polkit rule, Caddy/nginx examples, install script
+│  └─ mount-helper/        the SMB mount helper: TypeScript, node: built-ins only, built into one .mjs file
 ├─ docs/design/            this design
 └─ pnpm-workspace.yaml
 ```
 
 Dependency direction: `web → contracts, design-system`; `server → contracts`;
-`contracts` and `design-system` depend on no workspace package. `server` never
+`contracts`, `design-system` and `deploy/mount-helper` (a workspace package,
+so `pnpm -r build` and the tests cover it) depend on no workspace package. `server` never
 imports `web` or `design-system`; it copies `apps/web/dist` at build time.
 
 ## Release artefact
 
 `pnpm --filter @not-unreachable/server deploy --prod dist/release` gives a
-self-contained folder (server JS, production `node_modules`, the web `dist`,
-the migrations). The install script unpacks a release tarball of that folder to
+self-contained folder with the server package at its root (`dist/main.js`,
+production `node_modules`, the web build, the migrations). better-sqlite3 and
+@node-rs/argon2 are native, so CI builds one tarball per architecture
+(`linux-x64`, `linux-arm64`, glibc), each on its own architecture. The install
+script picks the one for the host and unpacks it to
 `/opt/not-unreachable/<version>` and points `/opt/not-unreachable/current` at
 it (see [deployment.md](deployment.md)). Self-update is out of scope for this
 Initiative.

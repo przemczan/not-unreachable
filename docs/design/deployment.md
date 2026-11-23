@@ -13,15 +13,15 @@ turns this file into the install script; the **Skeleton** Task (Task
 | `/opt/not-unreachable/<version>/` | `root:root 0755`, read-only | The release (server, web build, migrations, production `node_modules`). |
 | `/opt/not-unreachable/current` | symlink | The release in use. |
 | `/usr/local/bin/not-unreachable` | `root 0755` | The CLI wrapper (`migrate`, `setup-link`, `reset-admin`, `rotate-key`, `backup`, `allow-folder`); it runs as the service user unless the subcommand needs root. |
-| `/usr/lib/not-unreachable/mount-helper` | `root 0755` | The SMB mount helper (see [smb.md](smb.md)). |
+| `/usr/lib/not-unreachable/mount-helper.mjs` | `root 0644` | The SMB mount helper, run by `/usr/bin/node` (see [smb.md](smb.md)). |
 | `/etc/not-unreachable/config.env` | `root:not-unreachable 0640` | Bootstrap config (below). |
 | `/etc/not-unreachable/credentials/master.key` | `root:root 0600` | 32 random bytes, made at install. Given to the service by `LoadCredential=`. |
 | `/var/lib/not-unreachable/` | `not-unreachable 0700` (`StateDirectory`) | Data: |
 | `  db/not-unreachable.sqlite` (+ `-wal`, `-shm`) | `0600` | The database. |
 | `  uploads/` | `0700` | tus staging. |
-| `  mounts/<resourceId>/` | `0750` | SMB mount points. |
 | `  backups/` | `0700` | Pre-migration and scheduled backups. |
-| `/run/not-unreachable/` | `not-unreachable 0700` (`RuntimeDirectory`) | Mount requests and results. |
+| `/srv/not-unreachable/mounts/` | `root:root 0755` | SMB mount points, `<resourceId>/` each, made by the helper. Root-owned, so the helper never acts inside a directory the service controls. Inside a mount, everything belongs to the service user (`forceuid`, `dir_mode=0750`). |
+| `/run/not-unreachable/` | `not-unreachable 0700` (`RuntimeDirectory`) | Mount request files (short-lived). |
 | `/run/not-unreachable-mount/` | `root 0700` | The helper's short-lived credentials files. |
 | journald | | Logs (`journalctl -u not-unreachable`). |
 
@@ -57,7 +57,7 @@ NotifyAccess=main
 User=not-unreachable
 Group=not-unreachable
 WorkingDirectory=/opt/not-unreachable/current
-ExecStart=/usr/bin/node --disable-proto=delete apps/server/dist/main.js
+ExecStart=/usr/bin/node --disable-proto=delete dist/main.js
 EnvironmentFile=/etc/not-unreachable/config.env
 Environment=NODE_ENV=production
 LoadCredential=master.key:/etc/not-unreachable/credentials/master.key
@@ -97,8 +97,8 @@ SystemCallFilter=@system-service
 SystemCallFilter=~@privileged @mount
 # V8's JIT needs writable+executable memory, so MemoryDenyWriteExecute stays off.
 MemoryDenyWriteExecute=no
-# Local folders the admin maps are added by the install script / admin docs:
-# ReadWritePaths=/srv/files
+ReadWritePaths=/srv/not-unreachable/mounts
+# Local folders the admin maps are added in a drop-in (resources.conf, below)
 LimitNOFILE=65536
 
 [Install]
@@ -123,10 +123,13 @@ WantedBy=multi-user.target
   handles that case.
 - The install script runs `systemd-analyze security not-unreachable` and fails
   if the exposure score is above 2.0.
-- The mount helper's unit, `not-unreachable-mount@.service`, runs as root with
-  its own narrower hardening (`ProtectHome=yes`, `PrivateTmp=yes`,
-  `NoNewPrivileges=yes`, `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`),
-  but it must keep `CAP_SYS_ADMIN` and the host mount namespace to mount.
+- `WorkingDirectory` is the release root that `pnpm deploy` writes (see
+  [stack.md](stack.md#release-artefact)), so the entry point is `dist/main.js`.
+- The mount helper's unit, `not-unreachable-mount@.service`, runs as root and
+  must stay in the host's mount namespace, so it can't use `ProtectSystem=`,
+  `ProtectHome=`, `PrivateTmp=` or any other directive that would give it a
+  namespace of its own; a mount made there would never reach the host. Its
+  hardening without one is listed in [smb.md](smb.md#what-happens-underneath).
 
 ## TLS and the reverse proxy
 
@@ -153,7 +156,7 @@ cover long downloads.
 files.example.com {
 	encode zstd gzip
 	request_body {
-		max_size 64MB
+		max_size 64MiB
 	}
 	reverse_proxy 127.0.0.1:8480 {
 		flush_interval -1
@@ -164,7 +167,7 @@ files.example.com {
 		format filter {
 			wrap json
 			fields {
-				request>uri regexp ^/s/[^/?]+ /s/REDACTED
+				request>uri regexp ^/(s|api/v1/public/share-links)/[^/?]+ /$1/REDACTED
 			}
 		}
 	}
@@ -193,6 +196,11 @@ server {
 
     # Keep share-link tokens out of the access log.
     location /s/ {
+        access_log off;
+        proxy_pass http://127.0.0.1:8480;
+        include /etc/nginx/snippets/not-unreachable-proxy.conf;
+    }
+    location /api/v1/public/share-links/ {
         access_log off;
         proxy_pass http://127.0.0.1:8480;
         include /etc/nginx/snippets/not-unreachable-proxy.conf;
@@ -239,8 +247,10 @@ adds none, so there is one source of truth.
    the setup page posts it in the body.
 3. The admin opens the link and picks a username, email and password, then
    **must** add a second factor (authenticator app or passkey; email codes are
-   not available before SMTP is set up) and save the recovery codes.
-4. The setup route then answers 404 for good. `system.admin-created` is audited.
+   not available before SMTP is set up) and save the recovery codes. Until the
+   2FA Task has landed, setup ends after the password, and that Task makes the
+   admin enrol at the next sign-in (see the [task map](README.md#task-map)).
+4. The setup route then answers 404 for good. `setup.completed` is audited.
 
 *Rejected:* a default password (would be on the Internet until changed); an
 admin created by CLI with a password typed on the command line (lands in shell

@@ -20,7 +20,10 @@ The Initiative's attachment *NotNullSoft Admin Design System (2).zip*
 | `components/core/Logo.jsx`, `assets/logo/*.svg` | The NotNullSoft mark (a bar over a dot) and the two-tone lowercase "notnullsoft" wordmark in Darker Grotesque, with a product chip. |
 | `fonts/` | Geist and Geist Mono (variable woff2), Darker Grotesque Medium (logo only); all SIL OFL. |
 | `README.md` | Content rules (voice, casing, buttons, confirmations, toasts, empty states, numbers, time), visual foundations, iconography, layout. |
+| `api/components/*.md`, `api/tokens.md` | Reference docs: each component's props and usage, and every token with its value. The port's reference next to the `.d.ts` files. |
+| `guidelines/type-*.html` | Specimen pages for the type scale, body text and numbers. |
 | `ui_kits/admin/` | Reference screens: Login, Shell, Users, User detail, Audit log, Settings, Dashboard. |
+| `archived/` (incl. `styles.css`, `tokens/*.css`), `components/Cover/` | An earlier split of the tokens and specimen cards, kept by the export; `tokens.json` supersedes them. The cover page shows the brand. |
 
 Not in the zip: `_adherence.oxlintrc.json` and the token-to-Tailwind mapping.
 They live in notnullsoft-admin (`design-system/` and its web app), which this
@@ -56,8 +59,11 @@ brings over any rule it has that this file lacks (see [Enforcement](#enforcement
   that carries the name and can't be tree-shaken or type-checked. *An npm
   package or submodule from notnullsoft-admin*: brings the name and couples
   releases. *Files inside `apps/web/src`*: no boundary for the lint rules.
-- **Provenance** (source attachment, date of the copy) is recorded in this file
-  only, so the package itself carries no NotNullSoft name.
+- **Provenance** is recorded in this file only, so the package itself carries
+  no NotNullSoft name. The source is the attachment above. The skeleton Task
+  (or the design-system package Task, if it is split off) adds the date of the
+  copy and the commit that made it here, under this heading:
+  *Copied on: (not yet).*
 
 ### Package layout
 
@@ -135,7 +141,8 @@ in `tokens.json`, the only value changes:
 | `window.NotNullSoftAdminDesignSystem_a508e9`, `components/bundle.js`, `components/index.d.ts` | **Removed**: the package's ES exports replace them. |
 | `nns-` identifiers (`@keyframes nns-spin`) | `nu-` (`--animate-spin` / `@keyframes nu-spin` in `theme.css`). |
 | `ui_kits/admin/*` (sample data with `@notnullsoft.com` emails, "Restricted to NotNullSoft staff") | **Not copied.** The patterns are used (see the screen map); the files are not. |
-| `archived/`, `_ds_manifest.json`, `manifest.json`, `assets/notes/*` (tooling files of the export) | **Not copied.** |
+| `archived/`, `components/Cover/`, `_ds_manifest.json`, `manifest.json`, `assets/notes/*` (tooling files and specimens of the export) | **Not copied.** |
+| `api/components/*.md`, `api/tokens.md`, `guidelines/type-*.html` | **Not copied as files.** Each ported component carries its props and usage as TSDoc; the token reference is generated from `tokens.json` into the package README. |
 | Charts (`LineChart`, `BarChart`, `DonutChart`, `Sparkline`) and `StatCard` | **Not ported now**: no screen in this Initiative needs them. Port them when one does. |
 | Token names and values, components, layouts, content rules | **Kept**, apart from the two accessibility fixes above. Ember stays the accent. |
 
@@ -190,7 +197,13 @@ which the root config `extends`. All are errors.
 | `react/no-danger` | `dangerouslySetInnerHTML` (also a security rule, T4) | – |
 
 The `nu-design-system` rules form a small oxlint JS plugin, each with a test
-file of rejected and accepted cases. Where `_adherence.oxlintrc.json` in
+file of rejected and accepted cases. `no-unknown-classes` asks Tailwind's own
+compiler, loaded with our `theme.css`, whether each class produces CSS, so it
+never drifts from the theme. The plugin's rules use the ESLint rule API that
+oxlint's JS plugins accept. If that API is not stable in the oxlint line the
+skeleton installs, the same rule files run under ESLint 9 for `apps/web` and
+`packages/design-system` only, as a second step of `pnpm lint`, and the
+skeleton Task records that here. Where `_adherence.oxlintrc.json` in
 notnullsoft-admin already has a built-in rule for a row, the skeleton Task uses
 that rule and drops the plugin rule. Any of its rules this table lacks is
 added, renamed to `nu-`.
@@ -241,11 +254,11 @@ rows with ProgressBar and pause/resume/cancel IconButtons), `QuotaMeter`
 | Files | both | AppShell | PageHeader with actions (Upload files, New folder), Breadcrumbs for the path, DataTable (name with file-type Icon, size `num` right-aligned, modified relative time, row Menu: Download, Share link (admin), Delete), EmptyState, DropZone, Dialog to confirm delete ("Delete 3 files?") | Users |
 | Upload queue | both | AppShell | UploadQueue docked bottom-right, Toast "Upload complete" | – |
 | Create / edit share link | admin | Dialog | Switch "Require a password", PasswordInput, ExpiryPicker, Alert `warning` for "No expiry", CopyField | UserDetail (suspend Dialog) |
-| Share links | admin | AppShell | DataTable (item, Badge expiry, Badge password, downloads `num`, created), Tag filters (Active / Expired / Revoked), row Menu (Copy link, Edit, Revoke) | Users |
+| Share links | admin | AppShell | DataTable (item, Badge expiry, Badge password, Badge `danger` "Locked" while locked after wrong passwords, downloads `num`, created), Tag filters (Active / Expired / Revoked), row Menu (Copy link, Edit, Revoke) | Users |
 | Users | admin | AppShell | Tabs (Users / Invitations), DataTable with Avatar, Badge status, QuotaMeter, row Menu (Disable, Reset password, Remove second factors, Delete), Dialog confirms | Users |
 | User detail | admin | AppShell, 2:1 | PageHeader with status + actions, DescriptionList, QuotaMeter, Timeline of the user's audit events | UserDetail |
 | Invitations | admin | AppShell (tab of Users) | DataTable, Badge (Pending / Accepted / Expired / Revoked), Dialog "Invite user" → CopyField | Users |
-| Resources | admin | AppShell | DataTable or Card list with Badge (Available / Unavailable + reason), Drawer form for local folder / SMB share, Button "Test connection" → Alert result, RadioGroup "Home root" | Settings |
+| Resources | admin | AppShell | DataTable or Card list with Badge (Available / Unavailable + reason) and Badge `warning` "Not encrypted" for an SMB share without encryption, Drawer form for local folder / SMB share, Button "Test connection" → Alert result, RadioGroup "Home root" | Settings |
 | Admin settings | admin | AppShell | Tabs (General / Security / Email / Sign-in providers), label-left/controls-right rows, Switch, Input with unit `suffix`, Select, sticky "unsaved changes" bar | Settings |
 | Account settings | both | AppShell | Tabs (Profile / Password / Two-step sign-in / Linked sign-ins / Sessions), label-left rows, DataTable of sessions, Dialog confirms | Settings |
 | Audit log | admin | AppShell | Filters (date range, actor, action, outcome Tag), day-grouped Timeline, "Details" opens a Drawer with the event as DescriptionList, Pagination, Button "Export CSV"; the timezone is stated | AuditLog |

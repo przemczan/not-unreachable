@@ -68,6 +68,7 @@ in_container systemctl is-active --quiet not-unreachable.service
 in_container systemctl is-enabled --quiet not-unreachable-backup.timer
 in_container getent passwd not-unreachable | grep -qE ':(/usr/sbin/nologin|/sbin/nologin)$'
 # The fixed default ID (docs/install.md, "The service user's ID").
+# shellcheck disable=SC2016 # expanded inside the container.
 ids=$(in_container bash -c 'printf "%s:%s" "$(id -u not-unreachable)" "$(getent group not-unreachable | cut -d: -f3)"')
 [[ "$ids" == 2000:2000 ]] || { echo "::error::the service user has UID:GID $ids, not 2000:2000" >&2; exit 1; }
 # Type=notify: the service is listening once it is active.

@@ -1,0 +1,30 @@
+# The SMB mount helper (smb.md, "What happens underneath"): `mount <id>` when started, `unmount <id>`
+# when stopped. The service user starts and stops it through polkit (deploy/polkit); it is never
+# enabled at boot, since only the running app can decrypt the credentials, so it has no [Install]
+# section.
+[Unit]
+Description=not-unreachable SMB share %i
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/node /usr/lib/not-unreachable/mount-helper.mjs mount %i
+ExecStop=/usr/bin/node /usr/lib/not-unreachable/mount-helper.mjs unmount %i
+# The helper stops mount.cifs after 25 seconds, so it still deletes the credentials file in time.
+TimeoutStartSec=30s
+
+# The mount must land in the host's mount namespace, or it would stay inside this unit. So there is
+# no directive that gives the unit a namespace of its own: no ProtectSystem=, ProtectHome=,
+# PrivateTmp=, PrivateDevices=, ReadOnlyPaths= and the like. The hardening is what works without one.
+NoNewPrivileges=yes
+# What mount.cifs needs.
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH
+# AF_NETLINK for name resolution.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+# System units start with an empty environment; PATH is the only variable, so mount.cifs and umount
+# are found in the system's own directories.
+Environment=PATH=/usr/sbin:/usr/bin:/sbin:/bin

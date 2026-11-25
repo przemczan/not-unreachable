@@ -1,0 +1,68 @@
+# The update helper's apply unit (docs/design/deployment.md, "Updating from Settings"): runs the
+# installer of the release the verify unit staged (`install.sh --apply-update`), restarts the
+# service, checks it is healthy, and rolls back to the release before otherwise. It reads only
+# root's own files, already verified. Only root starts it: not-unreachable-update.service, or
+# `not-unreachable update-recover`, which finishes an update left half-way. No polkit rule names
+# it, and it is never enabled, so it has no [Install] section.
+[Unit]
+Description=not-unreachable: apply an update
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/node /usr/lib/not-unreachable/update-helper.mjs apply
+# Longer than the helper's own limits, all run to the end: the installer (10 minutes), a restart
+# (5) and the health check (7 and a half: 30 seconds, its systemctl calls a minute each, the
+# request), then for a rollback a stop (5), the old installer (10), a restart and the health check
+# again, and a stop when that fails (5): 55 minutes, so systemd never kills it half-way through one.
+TimeoutStartSec=1h
+Environment=PATH=/usr/sbin:/usr/bin:/sbin:/bin
+UMask=0022
+StateDirectory=not-unreachable-update
+StateDirectoryMode=0755
+
+NoNewPrivileges=yes
+# What an install uses: giving files to root and the service user, setting their modes, and
+# reading and writing whatever their modes say (the service user's 0700 data folder, for the
+# database restore). Nothing to mount, load or reboot with.
+CapabilityBoundingSet=CAP_CHOWN CAP_FOWNER CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH
+AmbientCapabilities=
+# It writes what an upgrade writes and nothing else: the releases, the helpers, the CLI, the units,
+# the polkit rules, the sysusers and tmpfiles files, the mount root, the mount helper's credentials
+# folder, the data folder (to restore the database), and its state folder.
+ProtectSystem=strict
+ReadWritePaths=/opt/not-unreachable
+ReadWritePaths=/usr/lib/not-unreachable
+ReadWritePaths=/usr/local/bin
+ReadWritePaths=/etc/systemd/system
+ReadWritePaths=/etc/polkit-1/rules.d
+ReadWritePaths=/usr/lib/sysusers.d
+ReadWritePaths=/usr/lib/tmpfiles.d
+ReadWritePaths=/srv/not-unreachable
+ReadWritePaths=/run/not-unreachable-mount
+ReadWritePaths=/var/lib/not-unreachable
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+# The health check asks the service on loopback; nothing else is reachable.
+IPAddressDeny=any
+IPAddressAllow=localhost
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+# An install changes owners (@chown, part of @system-service), so @privileged as a whole can't be
+# filtered; mounting, loading modules, rebooting and the like can.
+SystemCallFilter=@system-service
+SystemCallFilter=~@mount @module @reboot @swap @raw-io @clock @cpu-emulation @debug @obsolete
+# V8's JIT needs writable+executable memory, so MemoryDenyWriteExecute stays off.
+MemoryDenyWriteExecute=no

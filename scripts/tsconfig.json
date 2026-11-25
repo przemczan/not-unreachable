@@ -1,0 +1,10 @@
+{
+  "extends": "../packages/tsconfig/node.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "outDir": ".tsbuild",
+    "emitDeclarationOnly": true
+  },
+  "include": [".", "../deploy/mount-helper/src/release-verify.mts"],
+  "exclude": [".tsbuild"]
+}

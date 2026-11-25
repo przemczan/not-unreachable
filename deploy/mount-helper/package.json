@@ -1,0 +1,28 @@
+{
+  "name": "@not-unreachable/mount-helper",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./folder-access": {
+      "@not-unreachable/source": "./src/folder-access.mts",
+      "types": "./dist/folder-access.d.mts",
+      "default": "./dist/folder-access.mjs"
+    },
+    "./release-verify": {
+      "@not-unreachable/source": "./src/release-verify.mts",
+      "types": "./dist/release-verify.d.mts",
+      "default": "./dist/release-verify.mjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "devDependencies": {
+    "@not-unreachable/contracts": "workspace:*",
+    "@not-unreachable/tsconfig": "workspace:*"
+  }
+}

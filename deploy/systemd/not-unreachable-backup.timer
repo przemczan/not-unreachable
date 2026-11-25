@@ -1,0 +1,12 @@
+# Runs not-unreachable-backup.service once a day (docs/design/deployment.md, "Backups"). Persistent=
+# catches up on a run missed while the host was off.
+[Unit]
+Description=Daily NotUnreachable database backup
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=1h
+
+[Install]
+WantedBy=timers.target

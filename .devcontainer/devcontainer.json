@@ -1,0 +1,7 @@
+{
+  "name": "not-unreachable",
+  "dockerComposeFile": ["compose.yaml"],
+  "service": "app",
+  "workspaceFolder": "/workspace",
+  "shutdownAction": "stopCompose"
+}

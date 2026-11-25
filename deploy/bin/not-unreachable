@@ -1,0 +1,288 @@
+#!/bin/bash
+# not-unreachable: the CLI wrapper, installed as /usr/local/bin/not-unreachable (root 0755) by
+# deploy/install.sh (docs/design/deployment.md, "Config, secrets and data").
+#
+# Only root runs it. Commands that change system files run as root: allow-folder (the systemd drop-in),
+# allow-folders-from-ui and update-from-ui (config.env and a polkit rule, done by this script alone),
+# update-recover (starts the update helper's apply unit) and rotate-key (the master key in /etc). Every
+# other command runs as the service user in a transient
+# unit with the service's own sandbox, config and master key credential (systemd-run), so it sees what
+# the service sees and writes files the service can read, and the key file itself stays root-only.
+set -euo pipefail
+
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+readonly SERVICE_USER=not-unreachable
+readonly SERVICE_UNIT=not-unreachable.service
+readonly RELEASE_DIR=/opt/not-unreachable/current
+readonly CONFIG_FILE=/etc/not-unreachable/config.env
+readonly MASTER_KEY_FILE=/etc/not-unreachable/credentials/master.key
+readonly DATA_DIR=/var/lib/not-unreachable
+readonly PROTECTED_HARDLINKS=/proc/sys/fs/protected_hardlinks
+readonly NODE=/usr/bin/node
+readonly NODE_OPTIONS_FIXED=(--disable-proto=delete)
+# The allow-folder polkit rule: its source, which the installer keeps next to the helpers, and where
+# it is active, only while ALLOW_FOLDERS_FROM_UI=true.
+readonly FOLDER_RULE_SOURCE=/usr/lib/not-unreachable/51-not-unreachable-allow-folder.rules
+readonly FOLDER_RULE=/etc/polkit-1/rules.d/51-not-unreachable-allow-folder.rules
+# The same for the update rule, active only while UPDATE_FROM_UI=true.
+readonly UPDATE_RULE_SOURCE=/usr/lib/not-unreachable/52-not-unreachable-update.rules
+readonly UPDATE_RULE=/etc/polkit-1/rules.d/52-not-unreachable-update.rules
+readonly UPDATE_APPLY_UNIT=not-unreachable-update-apply.service
+readonly UPDATE_STATUS_FILE=/var/lib/not-unreachable-update/status.json
+
+readonly ROOT_COMMANDS=(allow-folder allow-folders-from-ui update-from-ui update-recover rotate-key)
+readonly SERVICE_USER_COMMANDS=(migrate backup setup-link reset-admin)
+
+# not-unreachable.service's [Service] settings that shape what the process sees, minus the ones that
+# belong to the long-running service alone (RuntimeDirectory=, which a transient unit would remove when
+# it stops, RemoveIPC=, which would remove the service's IPC objects, Restart= and the like).
+# deploy/install/ tests that this list matches the unit.
+# shellcheck disable=SC2034 # read through run_cli_unit's nameref.
+readonly SANDBOX_PROPERTIES=(
+  "User=$SERVICE_USER"
+  "Group=$SERVICE_USER"
+  "WorkingDirectory=$RELEASE_DIR"
+  "EnvironmentFile=$CONFIG_FILE"
+  "Environment=NODE_ENV=production"
+  "LoadCredential=master.key:$MASTER_KEY_FILE"
+  "StateDirectory=not-unreachable"
+  "StateDirectoryMode=0700"
+  "UMask=0077"
+  "NoNewPrivileges=yes"
+  "CapabilityBoundingSet="
+  "AmbientCapabilities="
+  "ProtectSystem=strict"
+  "ProtectHome=yes"
+  "PrivateTmp=yes"
+  "PrivateDevices=yes"
+  "ProtectKernelTunables=yes"
+  "ProtectKernelModules=yes"
+  "ProtectKernelLogs=yes"
+  "ProtectControlGroups=yes"
+  "ProtectClock=yes"
+  "ProtectHostname=yes"
+  "ProtectProc=invisible"
+  "ProcSubset=pid"
+  "RestrictNamespaces=yes"
+  "RestrictRealtime=yes"
+  "RestrictSUIDSGID=yes"
+  "LockPersonality=yes"
+  "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6"
+  "SystemCallArchitectures=native"
+  "SystemCallFilter=@system-service"
+  "SystemCallFilter=~@privileged @mount"
+  "MemoryDenyWriteExecute=no"
+  "ReadWritePaths=/srv/not-unreachable/mounts"
+)
+
+# Root commands get the config and a clean environment, nothing else.
+# shellcheck disable=SC2034 # read through run_cli_unit's nameref.
+readonly ROOT_PROPERTIES=(
+  "WorkingDirectory=$RELEASE_DIR"
+  "EnvironmentFile=$CONFIG_FILE"
+  "Environment=NODE_ENV=production"
+  "UMask=0077"
+)
+
+die() {
+  printf 'not-unreachable: %s\n' "$1" >&2
+  exit "${2:-1}"
+}
+
+contains() {
+  local wanted="$1" item
+  shift
+  for item in "$@"; do
+    [[ "$item" == "$wanted" ]] && return 0
+  done
+  return 1
+}
+
+# A terminal when there is one, so reset-admin can ask to confirm; a pipe otherwise.
+io_mode() {
+  if [[ -t 0 && -t 1 ]]; then
+    printf -- '--pty'
+  else
+    printf -- '--pipe'
+  fi
+}
+
+# Runs the server's CLI in a transient unit and answers its exit code.
+run_cli_unit() {
+  local -n properties="$1"
+  shift
+  local arguments=(--quiet --collect --wait "$(io_mode)" --service-type=exec
+    "--description=not-unreachable $1")
+  local property
+  for property in "${properties[@]}"; do
+    arguments+=(-p "$property")
+  done
+  systemd-run "${arguments[@]}" -- "$NODE" "${NODE_OPTIONS_FIXED[@]}" dist/cli.js "$@"
+}
+
+run_as_service_user() {
+  run_cli_unit SANDBOX_PROPERTIES "$@"
+}
+
+run_as_root() {
+  run_cli_unit ROOT_PROPERTIES "$@"
+}
+
+# rotate-key opens the database as root, so the backup and any -wal/-shm files it made are root's:
+# give them back to the service user, without following symlinks.
+return_data_to_service_user() {
+  find "$DATA_DIR" -xdev -user root -exec chown -h "$SERVICE_USER:$SERVICE_USER" {} +
+}
+
+sysctl_enabled() {
+  local value
+  value=$(cat -- "$1" 2>/dev/null) || return 1
+  [[ "$value" == 1 ]]
+}
+
+rotate_key() {
+  if systemctl is-active --quiet "$SERVICE_UNIT"; then
+    die "stop the service first (systemctl stop $SERVICE_UNIT); rotate-key re-encrypts the secrets while nothing uses them. Nothing changed."
+  fi
+  # Giving the files back chowns as root in a folder the service user writes to, where a hard link to
+  # a root-owned file (such as /etc/shadow) would hand that file over. The kernel's protected_hardlinks
+  # keeps the service user from making such a link.
+  sysctl_enabled "$PROTECTED_HARDLINKS" ||
+    die "fs.protected_hardlinks is off; rotate-key needs it on (sysctl -w fs.protected_hardlinks=1). Nothing changed."
+  local status=0
+  run_as_root rotate-key "$@" || status=$?
+  return_data_to_service_user
+  return "$status"
+}
+
+# Sets a switch such as ALLOW_FOLDERS_FROM_UI= in a config.env: the first such line replaced and any
+# later one dropped, or the line appended. Written to a temp file next to it, then renamed over it, so
+# the service never reads half a file; the mode and owner are the installer's.
+set_config_switch() {
+  local config="$1" key="$2" value="$3" temporary
+  temporary=$(mktemp "$(dirname "$config")/.config.env.XXXXXX")
+  if ! awk -v key="$key" -v line="$key=$value" '
+      $0 ~ "^[[:space:]]*" key "[[:space:]]*=" { if (!done) print line; done = 1; next }
+      { print }
+      END { if (!done) print line }
+    ' "$config" >"$temporary"; then
+    rm -f -- "$temporary"
+    die "could not rewrite $config. Nothing changed."
+  fi
+  chmod 0640 "$temporary"
+  chown "root:$SERVICE_USER" "$temporary"
+  mv -T -- "$temporary" "$config"
+}
+
+# Switches a feature of the admin interface that starts a root helper on or off: the switch in
+# config.env, the polkit rule that lets the service user start the helper's unit, then the service, so
+# it reads the switch. It takes the paths as arguments, so the tests can point it at temp files.
+switch_from_ui() {
+  local key="$1" state="$2" config="$3" rule_source="$4" rule="$5"
+  [[ -f "$config" ]] || die "there is no $config: install NotUnreachable first. Nothing changed."
+  if [[ "$state" == on ]]; then
+    [[ -f "$rule_source" ]] || die "there is no $rule_source: run this release's install.sh again. Nothing changed."
+    set_config_switch "$config" "$key" true
+    install -m 0644 -o root -g root "$rule_source" "$rule"
+    printf 'Set %s=true in %s and installed the polkit rule %s.\n' "$key" "$config" "$rule"
+  else
+    # The rule goes first: from then on the service user can't start the helper.
+    rm -f -- "$rule"
+    set_config_switch "$config" "$key" false
+    printf 'Removed the polkit rule %s and set %s=false in %s.\n' "$rule" "$key" "$config"
+  fi
+  systemctl restart polkit.service || printf 'not-unreachable: warning: could not restart polkit; it picks the rule change up on its own.\n' >&2
+  # try-restart: a service stopped on purpose (such as for rotate-key) stays stopped.
+  systemctl try-restart "$SERVICE_UNIT" ||
+    die "$SERVICE_UNIT did not restart; see journalctl -u $SERVICE_UNIT. The switch is changed."
+  printf 'Restarted %s if it was running, so it reads the switch.\n' "$SERVICE_UNIT"
+}
+
+# Allowing folders from the admin interface (deployment.md, "Allowing folders from the admin interface").
+switch_folders_from_ui() {
+  switch_from_ui ALLOW_FOLDERS_FROM_UI "$@"
+}
+
+# Installing updates from Settings (deployment.md, "Updating from Settings").
+switch_update_from_ui() {
+  switch_from_ui UPDATE_FROM_UI "$@"
+}
+
+allow_folders_from_ui() {
+  if (($# != 1)) || [[ "$1" != on && "$1" != off ]]; then
+    die "usage: not-unreachable allow-folders-from-ui on|off. Nothing changed." 2
+  fi
+  switch_folders_from_ui "$1" "$CONFIG_FILE" "$FOLDER_RULE_SOURCE" "$FOLDER_RULE"
+}
+
+update_from_ui() {
+  if (($# != 1)) || [[ "$1" != on && "$1" != off ]]; then
+    die "usage: not-unreachable update-from-ui on|off. Nothing changed." 2
+  fi
+  switch_update_from_ui "$1" "$CONFIG_FILE" "$UPDATE_RULE_SOURCE" "$UPDATE_RULE"
+}
+
+# Ends an update from Settings that stopped half-way, whatever the switch: the apply unit rolls it back
+# from wherever it stopped. A oneshot unit's start returns once it has run, so this waits for it.
+update_recover() {
+  (($# == 0)) || die "usage: not-unreachable update-recover. Nothing changed." 2
+  printf 'Starting %s and waiting for it (journalctl -fu %s shows its steps)...\n' "$UPDATE_APPLY_UNIT" "$UPDATE_APPLY_UNIT"
+  local status=0
+  systemctl start "$UPDATE_APPLY_UNIT" || status=$?
+  if [[ -f "$UPDATE_STATUS_FILE" ]]; then
+    printf 'The last update'"'"'s status (%s):\n' "$UPDATE_STATUS_FILE"
+    cat -- "$UPDATE_STATUS_FILE"
+  fi
+  ((status == 0)) ||
+    die "$UPDATE_APPLY_UNIT failed; see journalctl -u $UPDATE_APPLY_UNIT, and docs/install.md, \"Upgrade and rollback\"."
+}
+
+show_usage() {
+  env -i "PATH=$PATH" NODE_ENV=production "$NODE" "${NODE_OPTIONS_FIXED[@]}" "$RELEASE_DIR/dist/cli.js" help
+  printf '\nRun every command as root (sudo not-unreachable <command>). %s run as root;\n' "${ROOT_COMMANDS[*]}"
+  printf '%s run as the service user %s.\n' "${SERVICE_USER_COMMANDS[*]}" "$SERVICE_USER"
+  printf '\nallow-folders-from-ui on|off: lets admins allow local folders from the admin interface, inside\n'
+  printf 'ALLOWED_FOLDER_PREFIXES, or stops it (ALLOW_FOLDERS_FROM_UI in %s and a polkit rule),\n' "$CONFIG_FILE"
+  printf 'then restarts the service.\n'
+  printf '\nupdate-from-ui on|off: lets admins install a newer release from Settings > Updates, or stops it\n'
+  printf '(UPDATE_FROM_UI in %s and a polkit rule), then restarts the service.\n' "$CONFIG_FILE"
+  printf '\nupdate-recover: ends an update from Settings that stopped half-way, rolling it back, and waits.\n'
+}
+
+main() {
+  local command="${1:-}"
+  case "$command" in
+    "" | help | --help | -h)
+      show_usage
+      [[ -n "$command" ]] || exit 2
+      return 0
+      ;;
+  esac
+  [[ "$(id -u)" == 0 ]] || die "run it as root, such as with sudo. Nothing changed."
+
+  if [[ "$command" == rotate-key ]]; then
+    shift
+    rotate_key "$@"
+  elif [[ "$command" == allow-folders-from-ui ]]; then
+    shift
+    allow_folders_from_ui "$@"
+  elif [[ "$command" == update-from-ui ]]; then
+    shift
+    update_from_ui "$@"
+  elif [[ "$command" == update-recover ]]; then
+    shift
+    update_recover "$@"
+  elif contains "$command" "${ROOT_COMMANDS[@]}"; then
+    run_as_root "$@"
+  elif contains "$command" "${SERVICE_USER_COMMANDS[@]}"; then
+    run_as_service_user "$@"
+  else
+    die "unknown command: $command (see not-unreachable help)" 2
+  fi
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

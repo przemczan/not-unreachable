@@ -1,0 +1,11 @@
+{
+  "extends": "../packages/tsconfig/node.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "outDir": ".tsbuild",
+    "emitDeclarationOnly": true,
+    "lib": ["es2024", "dom"]
+  },
+  "include": [".", "../playwright.config.ts"],
+  "exclude": [".tsbuild"]
+}

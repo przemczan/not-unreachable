@@ -1,0 +1,13 @@
+// not-unreachable (deployment.md, "Updating from Settings"): the service user may start the update
+// helper's verify unit, and nothing else; nothing lets it start the apply unit. Every other unit,
+// verb and action falls through to polkit's default, which denies the service user. This file is in
+// /etc/polkit-1/rules.d only while UPDATE_FROM_UI=true: `not-unreachable update-from-ui on|off`
+// copies it there from /usr/lib/not-unreachable or removes it.
+polkit.addRule(function (action, subject) {
+  if (action.id === "org.freedesktop.systemd1.manage-units" &&
+      subject.user === "not-unreachable" &&
+      action.lookup("unit") === "not-unreachable-update.service" &&
+      action.lookup("verb") === "start") {
+    return polkit.Result.YES;
+  }
+});

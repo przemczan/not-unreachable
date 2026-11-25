@@ -1,0 +1,234 @@
+name: Install
+
+# Full installs from a locally built release tarball (docs/install.md): Ubuntu 24.04 on x64 and
+# arm64, Debian 12 and Fedora in systemd containers, and AlmaLinux 9 with SELinux enforcing in a VM.
+# Ubuntu and AlmaLinux also run the mount propagation test (docs/design/smb.md, "Mount propagation
+# and the hardened service") against a Samba container.
+on:
+  pull_request:
+    paths:
+      - "deploy/**"
+      - "scripts/release/**"
+      - "docs/install.md"
+      - "apps/server/package.json"
+      - ".github/workflows/install.yml"
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Explicitly bash, so each step runs with pipefail (`install.sh | tee` fails when install.sh does).
+defaults:
+  run:
+    shell: bash
+
+env:
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: 0
+  TEST_VERSION: 0.0.0-ci
+
+jobs:
+  tarball:
+    strategy:
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          # setup-node's automatic pnpm cache runs before Corepack has put pnpm on PATH; the
+          # pnpm store is cached by the explicit step below instead.
+          package-manager-cache: false
+      - name: Enable pnpm through Corepack
+        run: corepack enable
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-${{ runner.arch }}-
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      # With the SBOM, as the release builds it, so a broken cdxgen step shows here before a tag.
+      - run: scripts/release/build-tarball.sh "$TEST_VERSION" out
+      - name: Check the SBOM is in the tarball
+        # grep without -q reads the whole list, so tar never gets SIGPIPE under pipefail.
+        run: tar --list --gzip --file out/*.tar.gz | grep -x "not-unreachable-$TEST_VERSION-linux-${{ matrix.arch }}/sbom.cdx.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tarball-${{ matrix.arch }}
+          path: out/*.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+
+  # A full install on the runner itself, the security threshold and the mode audit (install.sh fails
+  # on either), then the propagation test, then an uninstall.
+  install-ubuntu:
+    needs: tarball
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    env:
+      SMB_TEST_HOST: 127.0.0.1
+      SMB_TEST_SHARE: nutest
+      SMB_TEST_USERNAME: nutest
+      SMB_TEST_PASSWORD: nutest-password
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: tarball-${{ matrix.arch }}
+          path: out
+      - name: Unpack the tarball
+        run: tar --extract --gzip --file out/*.tar.gz --directory out
+      - name: Make sure the runner's own Node isn't at /usr/bin/node
+        # The installer installs Node 24 from NodeSource, as on a fresh host, and refuses another
+        # major at /usr/bin/node.
+        run: |
+          if [ -e /usr/bin/node ]; then /usr/bin/node --version; sudo rm -f /usr/bin/node; fi
+      - name: Make a local folder to allow
+        run: sudo install -d -o root -g root -m 0755 /srv/media
+      - name: Install
+        run: sudo ./install.sh --public-origin https://files.example.com --allow-folder /srv/media --yes | tee install.log
+        working-directory: out/not-unreachable-${{ env.TEST_VERSION }}-linux-${{ matrix.arch }}
+      - name: Check the install
+        run: |
+          grep -qE '^  https://files\.example\.com/setup#[A-Za-z0-9_-]{43}$' out/*/install.log
+          systemctl is-active --quiet not-unreachable.service
+          systemctl is-enabled --quiet not-unreachable-backup.timer
+          systemctl list-timers not-unreachable-backup.timer --no-pager
+          sudo systemd-analyze security --no-pager not-unreachable.service | tail -n 1
+          sudo systemd-analyze security --no-pager not-unreachable-allow-folder.service | tail -n 1
+      - name: Allow a folder through the folder helper, as the admin interface does
+        # The service user may start the helper's unit only while ALLOW_FOLDERS_FROM_UI=true (the
+        # polkit rule), and the helper itself refuses while it is off.
+        run: |
+          sudo install -d -o root -g root -m 0755 /srv/photos
+          if sudo -u not-unreachable systemctl start not-unreachable-allow-folder.service; then
+            echo "::error::the service user started the folder helper while the switch is off" >&2; exit 1
+          fi
+          sudo not-unreachable allow-folders-from-ui on
+          test -f /etc/polkit-1/rules.d/51-not-unreachable-allow-folder.rules
+          # As the server writes it, in its RuntimeDirectory (made again by the restart above).
+          sudo -u not-unreachable sh -c 'umask 077 && mkdir -p /run/not-unreachable/folder-requests &&
+            printf "{\"path\":\"/srv/photos\"}" > /run/not-unreachable/folder-requests/allow-folder.json'
+          sudo -u not-unreachable systemctl start not-unreachable-allow-folder.service
+          grep -qx 'ReadWritePaths=/srv/photos' /etc/systemd/system/not-unreachable.service.d/resources.conf
+          # The helper scheduled the service's restart 3 seconds on; it is active again once ready (Type=notify).
+          sleep 8
+          timeout 60 bash -c 'until systemctl is-active --quiet not-unreachable.service; do sleep 1; done'
+          sudo not-unreachable allow-folders-from-ui off
+          test ! -e /etc/polkit-1/rules.d/51-not-unreachable-allow-folder.rules
+          if sudo -u not-unreachable systemctl start not-unreachable-allow-folder.service; then
+            echo "::error::the service user started the folder helper after the switch went off" >&2; exit 1
+          fi
+          if sudo systemctl start not-unreachable-allow-folder.service; then
+            echo "::error::the folder helper ran while the switch is off" >&2; exit 1
+          fi
+          test "$(systemctl show -p ExecMainStatus --value not-unreachable-allow-folder.service)" = 6
+      - name: Start Samba
+        run: |
+          docker run --detach --name samba --publish 445:445 \
+            --env ACCOUNT_nutest=nutest-password --env UID_nutest=1500 \
+            --env SAMBA_GLOBAL_CONFIG_server_SPACE_min_SPACE_protocol=SMB3_11 \
+            --env SAMBA_GLOBAL_CONFIG_server_SPACE_smb_SPACE_encrypt=required \
+            --env 'SAMBA_VOLUME_CONFIG_nutest=[nutest]; path = /tmp; valid users = nutest; guest ok = no; read only = no; browseable = yes; smb encrypt = required' \
+            ghcr.io/servercontainers/samba:smbd-only-a3.22.1-s4.21.4-r4
+          timeout 60 bash -c 'until (exec 3<>/dev/tcp/127.0.0.1/445) 2>/dev/null; do sleep 1; done'
+      - name: Run the propagation test
+        run: sudo --preserve-env=SMB_TEST_HOST,SMB_TEST_SHARE,SMB_TEST_USERNAME,SMB_TEST_PASSWORD deploy/test/propagation.sh
+      - name: Run a backup through the CLI
+        run: |
+          sudo not-unreachable backup
+          sudo ls -l /var/lib/not-unreachable/backups
+      - name: Uninstall, keeping the config and data
+        run: |
+          sudo out/*/install.sh --uninstall
+          test ! -e /etc/systemd/system/not-unreachable.service
+          test ! -e /etc/systemd/system/not-unreachable-allow-folder.service
+          test ! -e /usr/lib/not-unreachable
+          sudo test -f /etc/not-unreachable/credentials/master.key
+          sudo test -d /var/lib/not-unreachable/db
+      - name: Show the logs
+        if: failure()
+        run: sudo journalctl --no-pager -n 300 -u 'not-unreachable*' -u polkit
+
+  install-containers:
+    needs: tarball
+    strategy:
+      fail-fast: false
+      matrix:
+        distribution: [debian-12, fedora-43]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: tarball-x64
+          path: out
+      - run: deploy/test/systemd-container.sh "${{ matrix.distribution }}" out/*.tar.gz
+
+  install-selinux:
+    needs: tarball
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      SMB_TEST_SHARE: nutest
+      SMB_TEST_USERNAME: nutest
+      SMB_TEST_PASSWORD: nutest-password
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: tarball-x64
+          path: out
+      - name: Install QEMU and let the runner use KVM
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils cloud-image-utils
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
+      - name: Start Samba
+        run: |
+          docker run --detach --name samba --publish 445:445 \
+            --env ACCOUNT_nutest=nutest-password --env UID_nutest=1500 \
+            --env SAMBA_GLOBAL_CONFIG_server_SPACE_min_SPACE_protocol=SMB3_11 \
+            --env SAMBA_GLOBAL_CONFIG_server_SPACE_smb_SPACE_encrypt=required \
+            --env 'SAMBA_VOLUME_CONFIG_nutest=[nutest]; path = /tmp; valid users = nutest; guest ok = no; read only = no; browseable = yes; smb encrypt = required' \
+            ghcr.io/servercontainers/samba:smbd-only-a3.22.1-s4.21.4-r4
+          timeout 60 bash -c 'until (exec 3<>/dev/tcp/127.0.0.1/445) 2>/dev/null; do sleep 1; done'
+      - run: deploy/test/selinux-vm.sh out/*.tar.gz "$RUNNER_TEMP/alma9"
+      - name: Show the VM's console
+        if: failure()
+        run: tail -n 200 "$RUNNER_TEMP/alma9/console.log" || true

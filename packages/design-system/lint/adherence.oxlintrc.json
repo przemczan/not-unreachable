@@ -1,0 +1,172 @@
+{
+  "$schema": "../../../node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react"],
+  "jsPlugins": ["./plugin/index.ts"],
+  "overrides": [
+    {
+      "files": [
+        "apps/web/src/**",
+        "packages/design-system/src/components/**",
+        "packages/design-system/src/layouts/**",
+        "packages/design-system/src/brand/**",
+        "fixtures/*.tsx"
+      ],
+      "rules": {
+        "nu-design-system/no-arbitrary-values": "error",
+        "nu-design-system/no-raw-style-values": "error",
+        "nu-design-system/no-inline-style": "error",
+        "nu-design-system/no-style-element": "error",
+        "nu-design-system/no-unknown-classes": "error",
+        "react/no-danger": "error",
+        "no-restricted-globals": [
+          "error",
+          { "name": "lucide", "message": "Icons come from lucide-react through the design system's Icon, never from a CDN global." },
+          { "name": "feather", "message": "Icons come from lucide-react through the design system's Icon, never from a CDN global." },
+          { "name": "FontAwesome", "message": "Icons come from lucide-react through the design system's Icon, never from a CDN global." },
+          { "name": "bootstrap", "message": "Screens use the design system's components, never a UI kit's CDN global." },
+          { "name": "tailwind", "message": "Tailwind is compiled from the design system's theme.css, never loaded from the CDN." }
+        ],
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/modules/*/*", "!**/modules/*/index.ts", "../*/*", "!../*/index.ts"],
+                "message": "Import another module only through its index.ts (domain.md, rule 1)."
+              },
+              {
+                "group": [
+                  "@not-unreachable/design-system/**",
+                  "!@not-unreachable/design-system/theme.css",
+                  "!@not-unreachable/design-system/tokens.css",
+                  "!@not-unreachable/design-system/lint/adherence.oxlintrc.json",
+                  "!@not-unreachable/design-system/brand/*"
+                ],
+                "message": "Import the design system from @not-unreachable/design-system, not its internals (docs/design/design-system.md, Enforcement)."
+              },
+              {
+                "group": [
+                  "react-icons",
+                  "react-icons/**",
+                  "@heroicons/**",
+                  "@phosphor-icons/**",
+                  "@tabler/icons",
+                  "@tabler/icons-react",
+                  "@fortawesome/**",
+                  "react-feather",
+                  "feather-icons",
+                  "lucide",
+                  "lucide-static",
+                  "@iconify/**",
+                  "@mui/**",
+                  "@chakra-ui/**",
+                  "antd",
+                  "antd/**",
+                  "@ant-design/**",
+                  "@radix-ui/**",
+                  "@headlessui/**",
+                  "@mantine/**",
+                  "@blueprintjs/**",
+                  "@nextui-org/**",
+                  "@heroui/**",
+                  "bootstrap",
+                  "bootstrap/**",
+                  "react-bootstrap",
+                  "react-bootstrap/**",
+                  "semantic-ui-react",
+                  "primereact",
+                  "primereact/**",
+                  "flowbite-react",
+                  "daisyui"
+                ],
+                "message": "Icons come from lucide-react through the design system's Icon, components from @not-unreachable/design-system: no other icon set or UI kit (docs/design/design-system.md, Enforcement)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["apps/web/src/**", "fixtures/*.tsx"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/modules/*/*", "!**/modules/*/index.ts", "../*/*", "!../*/index.ts"],
+                "message": "Import another module only through its index.ts (domain.md, rule 1)."
+              },
+              {
+                "group": [
+                  "@not-unreachable/design-system/**",
+                  "!@not-unreachable/design-system/theme.css",
+                  "!@not-unreachable/design-system/tokens.css",
+                  "!@not-unreachable/design-system/lint/adherence.oxlintrc.json",
+                  "!@not-unreachable/design-system/brand/*"
+                ],
+                "message": "Import the design system from @not-unreachable/design-system, not its internals (docs/design/design-system.md, Enforcement)."
+              },
+              {
+                "group": [
+                  "react-icons",
+                  "react-icons/**",
+                  "@heroicons/**",
+                  "@phosphor-icons/**",
+                  "@tabler/icons",
+                  "@tabler/icons-react",
+                  "@fortawesome/**",
+                  "react-feather",
+                  "feather-icons",
+                  "lucide",
+                  "lucide-static",
+                  "@iconify/**",
+                  "@mui/**",
+                  "@chakra-ui/**",
+                  "antd",
+                  "antd/**",
+                  "@ant-design/**",
+                  "@radix-ui/**",
+                  "@headlessui/**",
+                  "@mantine/**",
+                  "@blueprintjs/**",
+                  "@nextui-org/**",
+                  "@heroui/**",
+                  "bootstrap",
+                  "bootstrap/**",
+                  "react-bootstrap",
+                  "react-bootstrap/**",
+                  "semantic-ui-react",
+                  "primereact",
+                  "primereact/**",
+                  "flowbite-react",
+                  "daisyui"
+                ],
+                "message": "Icons come from lucide-react through the design system's Icon, components from @not-unreachable/design-system: no other icon set or UI kit (docs/design/design-system.md, Enforcement)."
+              },
+              {
+                "group": ["*.css", "!main.css"],
+                "message": "apps/web imports CSS only in main.css: styles come from the design system's classes (docs/design/design-system.md, Enforcement)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    // The one helper that turns a measured position into a CSS length for popover placement
+    // (toCssLength): it has to write "px". Outside the rules' scope today; kept off should the scope widen.
+    {
+      "files": ["packages/design-system/src/lib/*length*.ts", "packages/design-system/src/lib/*Length*.ts"],
+      "rules": {
+        "nu-design-system/no-raw-style-values": "off"
+      }
+    },
+    // Tests assert measured positions and computed styles ("240px"): the values they check are not styling.
+    {
+      "files": ["**/*.test.ts", "**/*.test.tsx"],
+      "rules": {
+        "nu-design-system/no-raw-style-values": "off"
+      }
+    }
+  ]
+}

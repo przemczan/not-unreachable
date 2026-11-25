@@ -1,0 +1,113 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "extends": ["./packages/design-system/lint/adherence.oxlintrc.json"],
+  "plugins": ["typescript", "react", "react-hooks", "jsx-a11y", "import", "unicorn", "oxc", "vitest"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "env": {
+    "builtin": true,
+    "es2024": true
+  },
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/node_modules/**",
+    "**/coverage/**",
+    "apps/server/drizzle/**",
+    "playwright-report/**",
+    "test-results/**",
+    ".office/**",
+    "packages/design-system/lint/fixtures/**"
+  ],
+  "options": {
+    "typeAware": true,
+    "denyWarnings": true
+  },
+  "rules": {
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": "error",
+    "react/no-danger": "error",
+    "react/react-in-jsx-scope": "off",
+    "import/no-unassigned-import": ["warn", { "allow": ["**/*.css"] }],
+    "vitest/expect-expect": ["error", { "assertFunctionNames": ["expect", "expect*"] }],
+    // Vitest's expect takes an optional message as its second argument.
+    "vitest/valid-expect": ["error", { "maxArgs": 2 }],
+    "no-eval": "error",
+    "no-new-func": "error",
+    "no-implied-eval": "error",
+    "import/no-cycle": "error",
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          {
+            "group": ["**/modules/*/*", "!**/modules/*/index.ts", "../*/*", "!../*/index.ts"],
+            "message": "Import another module only through its index.ts (domain.md, rule 1)."
+          }
+        ]
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["apps/server/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:fs",
+                "message": "Only modules/platform, modules/storage, modules/files/staging.ts, modules/resources/mount-requests.ts, modules/resources/folder-requests.ts and modules/updates/spool.ts may use the file system (threat model, T5)."
+              },
+              {
+                "name": "node:fs/promises",
+                "message": "Only modules/platform, modules/storage, modules/files/staging.ts, modules/resources/mount-requests.ts, modules/resources/folder-requests.ts and modules/updates/spool.ts may use the file system (threat model, T5)."
+              },
+              {
+                "name": "fs",
+                "message": "Only modules/platform, modules/storage, modules/files/staging.ts, modules/resources/mount-requests.ts, modules/resources/folder-requests.ts and modules/updates/spool.ts may use the file system (threat model, T5)."
+              },
+              {
+                "name": "fs/promises",
+                "message": "Only modules/platform, modules/storage, modules/files/staging.ts, modules/resources/mount-requests.ts, modules/resources/folder-requests.ts and modules/updates/spool.ts may use the file system (threat model, T5)."
+              }
+            ],
+            "patterns": [
+              {
+                "group": ["**/modules/*/*", "!**/modules/*/index.ts", "../*/*", "!../*/index.ts"],
+                "message": "Import another module only through its index.ts (domain.md, rule 1)."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "apps/server/src/modules/platform/**",
+        "apps/server/src/modules/storage/**",
+        "apps/server/src/modules/files/staging.ts",
+        "apps/server/src/modules/resources/mount-requests.ts",
+        "apps/server/src/modules/resources/folder-requests.ts",
+        "apps/server/src/modules/updates/spool.ts",
+        "apps/server/src/**/*.test.ts",
+        "apps/server/src/test-support/**"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/modules/*/*", "!**/modules/*/index.ts", "../*/*", "!../*/index.ts"],
+                "message": "Import another module only through its index.ts (domain.md, rule 1)."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

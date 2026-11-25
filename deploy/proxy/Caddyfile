@@ -1,0 +1,20 @@
+# Caddy (2.8 or later) in front of NotUnreachable (docs/install.md, "Reverse proxy"). Replace
+# files.example.com with the host in PUBLIC_ORIGIN. Caddy gets the certificate and sends
+# X-Forwarded-For and -Proto itself. Uploads come in 64 MiB tus chunks, streamed (flush_interval -1);
+# requests whose URL carries a bearer token are kept out of the access log.
+files.example.com {
+	encode zstd gzip
+	request_body {
+		max_size 64MiB
+	}
+	reverse_proxy 127.0.0.1:8480 {
+		flush_interval -1
+	}
+	# Share-link, invitation and re-link tokens are in the path, the SSO callback's code in the query.
+	# The path matcher compares the decoded path, so a percent-encoded URL can't slip past it.
+	@bearer_token path /s/* /api/v1/public/share-links/* /invitation/* /relink/* /api/v1/invitations/* /api/v1/relink/* /api/v1/sso/*/callback
+	log_skip @bearer_token
+	log {
+		output file /var/log/caddy/not-unreachable.log
+	}
+}

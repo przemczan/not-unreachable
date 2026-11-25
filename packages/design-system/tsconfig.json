@@ -1,0 +1,12 @@
+{
+  "extends": "@not-unreachable/tsconfig/react.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": ".tsbuild",
+    "emitDeclarationOnly": true,
+    "types": ["node"],
+    "tsBuildInfoFile": ".tsbuild/tsconfig.tsbuildinfo"
+  },
+  "include": ["src", "scripts", "lint", "test", "vitest.config.ts"],
+  "exclude": ["lint/fixtures"]
+}

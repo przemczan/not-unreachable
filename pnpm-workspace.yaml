@@ -1,0 +1,14 @@
+packages:
+  - apps/*
+  - packages/*
+  - deploy/mount-helper
+
+# Supply-chain controls (threat model, T13).
+saveExact: true
+minimumReleaseAge: 4320
+strictDepBuilds: true
+# Only better-sqlite3 may run an install script. esbuild's binaries come as
+# optional dependencies, so its script is not needed.
+allowBuilds:
+  better-sqlite3: true
+  esbuild: false

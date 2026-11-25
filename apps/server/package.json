@@ -1,0 +1,51 @@
+{
+  "name": "@not-unreachable/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "files": [
+    "dist",
+    "drizzle"
+  ],
+  "bin": {
+    "not-unreachable": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-web.ts",
+    "start": "node dist/main.js",
+    "db:generate": "NODE_OPTIONS=--conditions=@not-unreachable/source drizzle-kit generate"
+  },
+  "dependencies": {
+    "@fastify/helmet": "13.2.0",
+    "@fastify/rate-limit": "11.3.0",
+    "@fastify/static": "10.1.12",
+    "@node-rs/argon2": "2.2.2",
+    "@not-unreachable/contracts": "workspace:*",
+    "@not-unreachable/mount-helper": "workspace:*",
+    "@simplewebauthn/server": "13.3.3",
+    "@tus/file-store": "2.1.2",
+    "@tus/server": "2.4.7",
+    "@tus/utils": "0.7.3",
+    "better-sqlite3": "13.2.0",
+    "drizzle-orm": "0.45.4",
+    "fastify": "5.12.8",
+    "fastify-type-provider-zod": "7.0.0",
+    "nodemailer": "10.6.1",
+    "openid-client": "6.9.1",
+    "otpauth": "9.6.0",
+    "pino": "10.4.0",
+    "qrcode": "1.5.4",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@not-unreachable/tsconfig": "workspace:*",
+    "@not-unreachable/web": "workspace:*",
+    "@types/better-sqlite3": "9.6.0",
+    "@types/nodemailer": "8.0.2",
+    "@types/qrcode": "1.5.6",
+    "@types/smtp-server": "3.5.13",
+    "drizzle-kit": "0.31.11",
+    "jose": "6.2.18",
+    "smtp-server": "3.21.7"
+  }
+}

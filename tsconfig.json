@@ -1,0 +1,13 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/contracts" },
+    { "path": "packages/design-system" },
+    { "path": "apps/server" },
+    { "path": "apps/web" },
+    { "path": "e2e" },
+    { "path": "scripts" },
+    { "path": "deploy/mount-helper" },
+    { "path": "deploy/install" }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "extends": "@not-unreachable/tsconfig/node.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": ".tsbuild",
+    "emitDeclarationOnly": true,
+    "types": [],
+    "tsBuildInfoFile": ".tsbuild/tsconfig.tsbuildinfo"
+  },
+  "include": ["src"]
+}

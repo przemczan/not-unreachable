@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="NotUnreachable">
+  <style>
+    .square { fill: #F4F4F2; }
+    .route { stroke: #F23D0F; }
+    .node { fill: #F23D0F; }
+    @media (prefers-color-scheme: dark) {
+      .square { fill: #0A0A09; }
+      .route { stroke: #F23D0F; }
+      .node { fill: #F23D0F; }
+    }
+  </style>
+  <rect width="32" height="32" rx="6" class="square" />
+  <path d="M6 26.5V14a5 5 0 0 1 10 0v4a5 5 0 0 0 10 0v-4.5" fill="none" class="route" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+  <circle cx="26" cy="6" r="3.25" class="node" />
+</svg>

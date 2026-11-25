@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.tsbuild/
+*.tsbuildinfo
+coverage/
+playwright-report/
+test-results/
+.env
+.env.*
+*.sqlite
+*.sqlite-*
+
+# pnpm puts its store here when the run environment has no other place for it.
+.pnpm-store/

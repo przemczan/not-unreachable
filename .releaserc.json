@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/semantic-release.json",
+  "branches": ["main"],
+  "tagFormat": "v${version}",
+  "plugins": [
+    ["@semantic-release/commit-analyzer", { "preset": "conventionalcommits" }],
+    ["@semantic-release/release-notes-generator", { "preset": "conventionalcommits" }],
+    [
+      "@semantic-release/github",
+      {
+        "draftRelease": true,
+        "releaseNameTemplate": "NotUnreachable <%= nextRelease.version %>",
+        "releaseBodyTemplate": "<%= nextRelease.notes %>\n\n## Install or upgrade\n\n```sh\ncurl -fsSL https://github.com/przemczan/not-unreachable/releases/latest/download/install.sh | sudo bash\n```\n\nTo verify and unpack the tarball by hand instead, see [docs/install.md](https://github.com/przemczan/not-unreachable/blob/<%= nextRelease.gitTag %>/docs/install.md).",
+        "successCommentCondition": false,
+        "failCommentCondition": false,
+        "releasedLabels": false
+      }
+    ]
+  ]
+}

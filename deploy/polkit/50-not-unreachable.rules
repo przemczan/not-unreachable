@@ -1,0 +1,14 @@
+// not-unreachable (smb.md, "Polkit rule"): the service user may start and stop its SMB mount
+// units, one per lower-case UUID, and nothing else. Every other unit, verb and action falls through
+// to polkit's default, which denies the service user.
+polkit.addRule(function (action, subject) {
+  if (action.id === "org.freedesktop.systemd1.manage-units" &&
+      subject.user === "not-unreachable") {
+    var unit = action.lookup("unit");
+    var verb = action.lookup("verb");
+    if (/^not-unreachable-mount@[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.service$/.test(unit) &&
+        (verb === "start" || verb === "stop")) {
+      return polkit.Result.YES;
+    }
+  }
+});

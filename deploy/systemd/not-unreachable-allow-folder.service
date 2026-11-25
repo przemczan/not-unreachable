@@ -1,0 +1,59 @@
+# The folder helper (docs/design/deployment.md, "Local folders"): adds the folder the admin asked for
+# in the admin interface to the service's drop-in, reloads systemd and schedules the service's
+# restart. The service user starts it through polkit, and only while ALLOW_FOLDERS_FROM_UI=true
+# (deploy/polkit/51-not-unreachable-allow-folder.rules); it is never enabled, so it has no [Install]
+# section.
+[Unit]
+Description=not-unreachable: allow a local folder
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/node /usr/lib/not-unreachable/folder-helper.mjs allow
+# The helper stops systemctl and systemd-run after 25 seconds.
+TimeoutStartSec=30s
+# System units start with an empty environment; PATH is the only variable, so systemctl and
+# systemd-run are found in the system's own directories.
+Environment=PATH=/usr/sbin:/usr/bin:/sbin:/bin
+UMask=0022
+
+# Unlike the mount helper, which must mount into the host's mount namespace, this one only writes a
+# file and talks to PID 1, so it gets a namespace of its own and the full file-system sandbox.
+NoNewPrivileges=yes
+# Root, but with one capability: CAP_DAC_READ_SEARCH resolves and stats the admin's folders whatever
+# their modes and reads the service user's 0600 request in its 0700 folder. Root owns the drop-in
+# folder, so writing there needs nothing more.
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+AmbientCapabilities=
+ProtectSystem=strict
+# The one folder it writes to; deploy/install.sh makes it (root, 0755), as the unit can't start
+# without it.
+ReadWritePaths=/etc/systemd/system/not-unreachable.service.d
+# Read-only rather than hidden: a folder under /home may be allowed when ALLOWED_FOLDER_PREFIXES
+# lists one there.
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+# systemctl and systemd-run reach PID 1 over /run/systemd/private, a socket in the file system,
+# which a network namespace doesn't hide.
+PrivateNetwork=yes
+IPAddressDeny=any
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+# What Node, systemctl and systemd-run need (open, realpath, rename, fsync, fchmod, execve, socket
+# I/O); none of them changes owners, user ids or mounts.
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @mount
+# V8's JIT needs writable+executable memory, so MemoryDenyWriteExecute stays off.
+MemoryDenyWriteExecute=no

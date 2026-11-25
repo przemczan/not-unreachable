@@ -1,0 +1,11 @@
+{
+  "extends": "@not-unreachable/tsconfig/node.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": ".tsbuild",
+    "emitDeclarationOnly": true,
+    "tsBuildInfoFile": ".tsbuild/tsconfig.tsbuildinfo"
+  },
+  "include": ["src", "test", "test-root", "*.ts"],
+  "references": [{ "path": "../../packages/contracts" }]
+}

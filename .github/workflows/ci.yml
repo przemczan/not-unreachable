@@ -1,0 +1,217 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: 0
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          # setup-node's automatic pnpm cache runs before Corepack has put pnpm on PATH; the
+          # pnpm store is cached by the explicit step below instead.
+          package-manager-cache: false
+      - name: Enable pnpm through Corepack
+        run: corepack enable
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+      - run: pnpm install --frozen-lockfile
+      # The runner image ships shellcheck; the install tests (deploy/install/) skip it where it is missing.
+      - run: shellcheck --version
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm format:check
+      - run: pnpm build
+      - run: pnpm test
+      - run: pnpm audit --prod --audit-level=high
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Enable pnpm through Corepack
+        run: corepack enable
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  # The mount helper's hostile-request tests (smb.md, "Testing"): a symlink, a FIFO, a file owned by
+  # another user, an oversized file and a symlink swapped in mid-run. They need root.
+  mount-helper-root:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Enable pnpm through Corepack
+        run: corepack enable
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @not-unreachable/mount-helper build
+      # sudo resets the environment: keep setup-node's Node 24 and Corepack's pnpm on PATH, and let
+      # Corepack fetch pnpm for root without asking.
+      - run: sudo env "PATH=$PATH" COREPACK_ENABLE_DOWNLOAD_PROMPT=0 pnpm test:helper-root
+
+  # The SMB integration test (smb.md, "Testing"): the real app mounts a Samba share that requires
+  # SMB 3.1.1 with encryption, through systemd, polkit and the root mount helper, as installed.
+  smb:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      samba:
+        # Pinned: smbd only (no avahi or wsdd2), Alpine 3.22.1 with Samba 4.21.4, image revision r4.
+        # Renovate proposes newer tags.
+        image: ghcr.io/servercontainers/samba:smbd-only-a3.22.1-s4.21.4-r4
+        ports:
+          - 445:445
+        env:
+          ACCOUNT_nutest: nutest-password
+          UID_nutest: "1500"
+          # `_SPACE_` stands for a space in the setting's name (the image's convention).
+          SAMBA_GLOBAL_CONFIG_server_SPACE_min_SPACE_protocol: SMB3_11
+          SAMBA_GLOBAL_CONFIG_server_SPACE_smb_SPACE_encrypt: required
+          # The container's /tmp (1777) is the share's folder, so it needs no volume from the host.
+          SAMBA_VOLUME_CONFIG_nutest: "[nutest]; path = /tmp; valid users = nutest; guest ok = no; read only = no; browseable = yes; smb encrypt = required"
+    env:
+      SMB_TEST_HOST: 127.0.0.1
+      SMB_TEST_SHARE: nutest
+      SMB_TEST_USERNAME: nutest
+      SMB_TEST_PASSWORD: nutest-password
+      # The test runs from a copy the service user owns, outside the runner's home (which it can't read).
+      SMB_TEST_DIR: /var/tmp/not-unreachable-smb-test
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Enable pnpm through Corepack
+        run: corepack enable
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Install cifs-utils and polkit
+        run: |
+          sudo apt-get update
+          # polkitd is the daemon with JavaScript rules support (/etc/polkit-1/rules.d).
+          sudo apt-get install -y --no-install-recommends cifs-utils polkitd
+      - name: Install the mount helper, its unit and the polkit rule as deployment.md lays them out
+        run: |
+          sudo useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin not-unreachable
+          # The unit runs /usr/bin/node; setup-node installs Node 24 under the tool cache, and the
+          # runner's own /usr/bin/node (if any) is another version. Copy ours there.
+          sudo install -m 0755 "$(command -v node)" /usr/bin/node
+          /usr/bin/node --version
+          # mount-helper.mjs imports request-file.mjs, which it shares with the folder helper.
+          sudo install -d -o root -g root -m 0755 /usr/lib/not-unreachable
+          sudo install -o root -g root -m 0644 deploy/mount-helper/dist/mount-helper.mjs deploy/mount-helper/dist/request-file.mjs /usr/lib/not-unreachable/
+          sudo install -o root -g root -m 0644 'deploy/systemd/not-unreachable-mount@.service' /etc/systemd/system/
+          sudo install -o root -g root -m 0644 deploy/polkit/50-not-unreachable.rules /etc/polkit-1/rules.d/
+          sudo systemctl daemon-reload
+          sudo systemctl restart polkit
+          sudo install -d -o root -g root -m 0755 /srv/not-unreachable /srv/not-unreachable/mounts
+          # As the service's RuntimeDirectory makes it; the app makes mount-requests/ inside it.
+          sudo install -d -o not-unreachable -g not-unreachable -m 0700 /run/not-unreachable
+          sudo install -d -o root -g root -m 0700 /run/not-unreachable-mount
+      - name: Wait for Samba
+        run: timeout 60 bash -c 'until (exec 3<>/dev/tcp/127.0.0.1/445) 2>/dev/null; do sleep 1; done'
+      - name: Copy the built workspace for the service user
+        run: |
+          sudo cp -a "$GITHUB_WORKSPACE" "$SMB_TEST_DIR"
+          sudo chown -R not-unreachable:not-unreachable "$SMB_TEST_DIR"
+      - name: Run the SMB integration test as the service user
+        # This is `pnpm test:smb`, run without pnpm: Corepack keeps pnpm in the runner's home, which
+        # the service user can't read. Node is the /usr/bin/node installed above.
+        working-directory: ${{ env.SMB_TEST_DIR }}
+        run: >-
+          sudo -u not-unreachable
+          env "PATH=/usr/bin:/bin:/usr/sbin:/sbin"
+          "SMB_TEST_HOST=$SMB_TEST_HOST" "SMB_TEST_SHARE=$SMB_TEST_SHARE"
+          "SMB_TEST_USERNAME=$SMB_TEST_USERNAME" "SMB_TEST_PASSWORD=$SMB_TEST_PASSWORD"
+          node node_modules/vitest/vitest.mjs run --config apps/server/vitest.smb.config.ts
+      - name: Check that no request or credentials file is left
+        if: always()
+        run: |
+          left="$(sudo find /run/not-unreachable /run/not-unreachable-mount -type f \( -name '*.json' -o -name '*.cred' \) -print)"
+          if [ -n "$left" ]; then
+            echo "::error::Mount request or credentials files were left behind:"
+            echo "$left"
+            exit 1
+          fi
+          if [ -n "$(sudo find /srv/not-unreachable/mounts -mindepth 1 -print -quit)" ]; then
+            echo "::error::Mount points were left behind:"
+            sudo ls -la /srv/not-unreachable/mounts
+            findmnt -t cifs || true
+            exit 1
+          fi
+      - name: Show the mount units' logs
+        if: failure()
+        run: sudo journalctl --no-pager -u 'not-unreachable-mount@*' -u polkit

@@ -1,0 +1,32 @@
+{
+  "name": "not-unreachable",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "packageManager": "pnpm@12.22.0",
+  "engines": {
+    "node": ">=24.11 <25"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "lint": "oxlint --type-aware && node scripts/check-brand.ts",
+    "typecheck": "tsc -b",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:helper-root": "vitest run --config deploy/mount-helper/vitest.root.config.ts",
+    "test:smb": "vitest run --config apps/server/vitest.smb.config.ts",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1",
+    "@types/node": "24.19.2",
+    "conventional-changelog-conventionalcommits": "9.3.1",
+    "oxlint": "1.94.0",
+    "oxlint-tsgolint": "7.0.2007",
+    "prettier": "3.10.1",
+    "semantic-release": "25.0.9",
+    "typescript": "7.0.2",
+    "vitest": "5.1.1"
+  }
+}

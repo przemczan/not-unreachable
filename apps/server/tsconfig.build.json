@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "emitDeclarationOnly": false,
+    "composite": false,
+    "incremental": false,
+    "declaration": false,
+    "declarationMap": false,
+    "customConditions": []
+  },
+  "references": [],
+  "exclude": ["src/**/*.test.ts", "src/test-support/**"]
+}

@@ -1,0 +1,210 @@
+name: Release
+
+# Every push to main releases what its commits call for (docs/design/stack.md, "Release artefact"):
+# semantic-release reads the Conventional Commits since the last release, and when a feat, a fix or a
+# breaking change calls for a new version, tags it and opens its GitHub Release as a draft. Then the
+# tarballs are built, each natively on its own architecture, since the native modules
+# (better-sqlite3, @node-rs/argon2) are built for it. The sign job writes SHA256SUMS over them and the
+# one-line installer and signs it with the release signing key (docs/design/deployment.md, "Release
+# signing"); then they are attached with SHA256SUMS, its signature, the SBOMs and the one-line
+# installer, and the Release is published. A push that calls for no release ends after the first
+# job. If a build fails, re-run the failed jobs: re-running the whole workflow finds the tag already
+# made and releases nothing.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run: work out the next version and its notes and build the tarballs, but publish nothing"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+# One release at a time, in the order of the pushes. Dry runs queue apart, so one never cancels a
+# release waiting its turn.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'dry-run' || 'release' }}
+  cancel-in-progress: false
+
+env:
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: 0
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # semantic-release pushes the tag and opens the draft Release; it also checks it could push in
+    # a dry run.
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.semantic-release.outputs.version }}
+      tag: ${{ steps.semantic-release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # semantic-release reads every tag and the commits since the last one.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          # setup-node's automatic pnpm cache would run before Corepack has put pnpm on PATH, and
+          # it would also be a pnpm store cache, which no Release job keeps (T13 below).
+          package-manager-cache: false
+      - name: Enable pnpm through Corepack
+        run: corepack enable
+      # No pnpm store cache in any Release job (threat model, T13).
+      - run: pnpm install --frozen-lockfile
+      - name: Run semantic-release
+        id: semantic-release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          if [[ "$DRY_RUN" == true ]]; then
+            node scripts/release/semantic-release.ts --dry-run
+          else
+            node scripts/release/semantic-release.ts
+          fi
+
+  build:
+    needs: version
+    if: needs.version.outputs.version != ''
+    strategy:
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Enable pnpm through Corepack
+        run: corepack enable
+      # No pnpm store cache: a release builds from the lockfile alone, so a poisoned cache can't
+      # reach it (threat model, T13).
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Build the tarball and its SBOM
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: scripts/release/build-tarball.sh "$VERSION" out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tarball-${{ matrix.arch }}
+          path: out/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  # The one job that holds a private key: it reads only, runs no dependency of the repository, and
+  # references its Actions by commit SHA (threat model, T17). The release-signing environment allows
+  # the main branch only and asks the maintainer to approve each run. A dry run has no tag, so it
+  # signs nothing.
+  sign:
+    needs: [version, build]
+    if: needs.version.outputs.tag != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: release-signing
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+          # What signing needs and nothing else: the script, the module it checks with, the pinned keys.
+          sparse-checkout: |
+            /.nvmrc
+            /package.json
+            /scripts/release/
+            /deploy/keys/release-signing/
+            /deploy/mount-helper/src/release-verify.mts
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: tarball-*
+          path: out
+          merge-multiple: true
+      - name: Write SHA256SUMS over the tarballs and the one-line installer
+        run: |
+          install -m 0644 scripts/release/bootstrap-install.sh out/install.sh
+          cd out
+          sha256sum -- *.tar.gz install.sh > SHA256SUMS
+      - name: Sign SHA256SUMS
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+          # Set only for the 12 months after a rotation (deployment.md, "Rotating a key on purpose").
+          RELEASE_SIGNING_KEY_PREVIOUS: ${{ secrets.RELEASE_SIGNING_KEY_PREVIOUS }}
+        run: node scripts/release/sign-checksums.ts out
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: signed-checksums
+          path: |
+            out/SHA256SUMS
+            out/SHA256SUMS.sig
+          if-no-files-found: error
+          retention-days: 7
+
+  # It never sees a private key: it gets the signed SHA256SUMS from the sign job.
+  publish:
+    needs: [version, build, sign]
+    if: needs.version.outputs.tag != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/release/bootstrap-install.sh
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: tarball-*
+          path: out
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: signed-checksums
+          path: out
+      - name: Add the one-line installer
+        run: install -m 0644 scripts/release/bootstrap-install.sh out/install.sh
+      - name: Check the files to attach against the signed SHA256SUMS
+        working-directory: out
+        run: |
+          sha256sum --check --strict SHA256SUMS
+          # Every tarball attached is listed, and every tarball listed is attached.
+          diff <(printf '%s\n' *.tar.gz | sort) <(sed -n 's/^[0-9a-f]\{64\}  \(.*\.tar\.gz\)$/\1/p' SHA256SUMS | sort)
+      - name: Extract the SBOMs to attach them beside the tarballs
+        working-directory: out
+        run: |
+          for tarball in *.tar.gz; do
+            name="${tarball%.tar.gz}"
+            tar --extract --gzip --file "$tarball" --to-stdout "$name/sbom.cdx.json" > "$name.sbom.cdx.json"
+          done
+      - name: Attach the files and publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          gh release upload "$TAG" out/*.tar.gz out/*.sbom.cdx.json out/SHA256SUMS out/SHA256SUMS.sig out/install.sh --clobber
+          gh release edit "$TAG" --draft=false --latest

@@ -1,0 +1,61 @@
+# NotUnreachable (docs/design/deployment.md, "systemd unit"), installed by deploy/install.sh as
+# /etc/systemd/system/not-unreachable.service. deploy/install/ tests that it matches the doc.
+[Unit]
+Description=NotUnreachable file sharing
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=notify
+NotifyAccess=all
+User=not-unreachable
+Group=not-unreachable
+WorkingDirectory=/opt/not-unreachable/current
+ExecStart=/usr/bin/node --disable-proto=delete dist/main.js
+EnvironmentFile=/etc/not-unreachable/config.env
+Environment=NODE_ENV=production
+LoadCredential=master.key:/etc/not-unreachable/credentials/master.key
+StateDirectory=not-unreachable
+StateDirectoryMode=0700
+RuntimeDirectory=not-unreachable
+RuntimeDirectoryMode=0700
+UMask=0077
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+
+# Hardening
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RemoveIPC=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @mount
+# V8's JIT needs writable+executable memory, so MemoryDenyWriteExecute stays off.
+MemoryDenyWriteExecute=no
+ReadWritePaths=/srv/not-unreachable/mounts
+# Local folders the admin maps are added in a drop-in (resources.conf, below)
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

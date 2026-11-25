@@ -1,0 +1,13 @@
+// not-unreachable (deployment.md, "Local folders"): the service user may start the folder helper's
+// unit, and nothing else. Every other unit, verb and action falls through to polkit's default, which
+// denies the service user. This file is in /etc/polkit-1/rules.d only while ALLOW_FOLDERS_FROM_UI=true:
+// `not-unreachable allow-folders-from-ui on|off` copies it there from /usr/lib/not-unreachable or
+// removes it.
+polkit.addRule(function (action, subject) {
+  if (action.id === "org.freedesktop.systemd1.manage-units" &&
+      subject.user === "not-unreachable" &&
+      action.lookup("unit") === "not-unreachable-allow-folder.service" &&
+      action.lookup("verb") === "start") {
+    return polkit.Result.YES;
+  }
+});

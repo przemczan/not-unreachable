@@ -13,8 +13,6 @@ nginx), on Debian, Ubuntu, Fedora or RHEL, on x86-64 or arm64.
 
 ![The Files page, listing the folders of a resource](docs/screenshots/screenshot1.png)
 
-![The dialog for creating a share link, with who can open it, a password and an expiry date](docs/screenshots/screenshot2.png)
-
 ## Buy me a coffee
 
 If NotUnreachable is useful to you, you can support its development.

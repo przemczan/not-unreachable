@@ -20,7 +20,7 @@ import type { AuditActor, AuditOrigin, AuditService, AuditTarget } from "../audi
 import { absoluteUrl, DAY_MS, hashToken, newId, newToken, type Clock, type EnvelopeAad, type Secrets } from "../platform/index.ts";
 import type { ResourcesService } from "../resources/index.ts";
 import { PathRefusedError, resolveInResource, stat } from "../storage/index.ts";
-import type { ShareLinksRepository, ShareLinksPosition } from "./repository.ts";
+import type { ShareLinkCounts, ShareLinksRepository, ShareLinksPosition } from "./repository.ts";
 import type { ShareLinkRow } from "./schema.ts";
 
 /** Who acts on the admin's routes, and from where, for the audit log. */
@@ -48,6 +48,11 @@ export interface ShareLinksService {
    */
   create(request: CreateShareLinkRequest, context: AdminContext): Promise<ShareLinkDetail>;
   list(query: ShareLinksQueryInput): ShareLinksPage;
+  /**
+   * The links in each state now, as the list's `state` filter reads them; `locked` counts the active
+   * ones locked after wrong passwords now; `downloads` adds up every link's downloads. One aggregate query.
+   */
+  counts(): ShareLinkCounts;
   get(id: string): ShareLinkDetail;
   /**
    * Any change of the password deletes every unlock; a change of the link access doesn't, and leaving
@@ -266,6 +271,8 @@ export function createShareLinksService({
       });
       return { shareLink: shareLinkOf(row), link: linkFor(token) };
     },
+
+    counts: () => repository.counts(clock.now().toISOString()),
 
     list({ state, cursor, limit }) {
       const { page, nextCursor } = pageOf(

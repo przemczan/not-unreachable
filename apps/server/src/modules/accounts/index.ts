@@ -28,6 +28,7 @@ export {
   type PasswordCheck,
   type ProfileChange,
   type ProfileField,
+  type UserCounts,
 } from "./service.ts";
 export {
   AdminExistsError,

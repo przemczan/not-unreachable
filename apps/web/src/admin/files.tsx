@@ -1,5 +1,5 @@
 import type { Entry } from "@not-unreachable/contracts";
-import { Alert, Button, Card, EmptyState, PageHeader, Select } from "@not-unreachable/design-system";
+import { Alert, Button, Card, EmptyState, PageHeader, SelectMenu } from "@not-unreachable/design-system";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Navigate, useNavigate, useParams, useSearchParams } from "react-router";
@@ -8,7 +8,7 @@ import { FileBrowser, folderHref, resourceSource, uploadStoreFor, type EntryButt
 import { problemMessage } from "../lib/index.ts";
 import { useSignedInSession } from "../session/index.ts";
 import { resourcesQueryKey } from "./resource-drawer.tsx";
-import { shareAddressOf } from "./resource-wording.tsx";
+import { resourceKindLabels, resourceLocationOf, shareAddressOf } from "./resource-wording.tsx";
 import { ShareLinkDialog, type ShareTarget } from "./share-link-dialogs.tsx";
 
 /** `/admin/files` and `/admin/files/:resourceId`: the files of every available resource. */
@@ -104,11 +104,15 @@ export function AdminFilesPage() {
         uploads={uploadStoreFor(account.id)}
         aside={
           available.length > 1 ? (
-            <Select
+            <SelectMenu
               aria-label="Resource"
               className="w-48"
               value={current.id}
-              options={available.map((resource) => ({ value: resource.id, label: resource.name }))}
+              options={available.map((resource) => ({
+                value: resource.id,
+                label: resource.name,
+                description: `${resourceKindLabels[resource.kind]} · ${resourceLocationOf(resource)}`,
+              }))}
               onChange={(value) => void navigate(`/admin/files/${value}`)}
             />
           ) : undefined

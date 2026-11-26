@@ -48,6 +48,12 @@ export interface ProfileChangeContext {
   readonly recentSignIn: boolean;
 }
 
+/** How many accounts of role `user` are active and disabled. */
+export interface UserCounts {
+  readonly active: number;
+  readonly disabled: number;
+}
+
 export interface AccountsService {
   findById(id: string): AccountRecord | undefined;
   /** By username or email, in any case: usernames and stored emails are lowercase. */
@@ -57,6 +63,8 @@ export interface AccountsService {
   create(account: NewAccount): AccountRecord;
   /** The accounts of role `user`, oldest first; never the admin. */
   listUsers(): AccountRecord[];
+  /** The accounts of role `user` by status, in one aggregate query; never the admin. */
+  countUsers(): UserCounts;
   isUsernameTaken(username: string): boolean;
   /** Whether an account has this email, in any case. */
   isEmailTaken(email: string): boolean;
@@ -164,6 +172,8 @@ export function createAccountsServiceWith({ repository, hasher, audit, clock, lo
     },
 
     listUsers: () => repository.listUsers().map(toAccountRecord),
+
+    countUsers: () => repository.countUsers(),
 
     isUsernameTaken: (username) => repository.findUserByUsername(username) !== undefined,
 

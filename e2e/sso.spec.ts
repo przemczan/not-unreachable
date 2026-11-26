@@ -15,7 +15,7 @@ test("the admin adds an OIDC provider, links it and signs in with it, then passe
 
   // A fresh password sign-in, so the writes below don't ask for a recent one.
   await signInAsAdmin(page);
-  await expect(page).toHaveURL("/admin/audit-log");
+  await expect(page).toHaveURL("/admin/dashboard");
 
   await page.goto("/admin/settings/sign-in-providers");
   await expect(page.getByText("No sign-in providers yet")).toBeVisible();
@@ -76,7 +76,7 @@ test("the admin adds an OIDC provider, links it and signs in with it, then passe
   await page.getByRole("button", { name: "Verify" }).click();
 
   await expect(page).toHaveURL(/^http:\/\/localhost:8481\/admin(\/|$)/);
-  await expect(page.getByRole("heading", { level: 1, name: "Audit log" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Dashboard" })).toBeVisible();
 
   await page.goto("/settings/linked-sign-ins");
   await expect(linked.getByText("Never")).toHaveCount(0);

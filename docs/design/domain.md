@@ -48,8 +48,9 @@ this glossary first.
 
 - One sign-in page at `/sign-in`, for both roles. After sign-in (and the second
   factor, once it exists), the server answers with the account's role. While no
-  admin exists, every page redirects to `/setup`. The SPA routes the admin to `/admin`
-  (Audit log, Settings with a Security tab) and a user to `/files`.
+  admin exists, every page redirects to `/setup`. The SPA routes the admin to the
+  Dashboard (`/admin/dashboard`: the instance's counts and its recent activity) and a
+  user to `/files`.
 - Both interfaces live in one SPA build, as two lazy route trees, so a user's
   browser never downloads the admin interface's code.
 - Separation is enforced **on the server**: every `/api/v1/admin/*` route's
@@ -135,6 +136,7 @@ modules/<name>/
 | 4 | `updates` | `update_checks`, `update_requests`; the check for new releases (GitHub, cached, every 6 hours, only while `UPDATE_CHECK` is on), the download into the spool, installing from Settings through the update helper (only while `UPDATE_FROM_UI` is on), recording `update.finished` once and its mail ([deployment.md](deployment.md#updating-from-settings)) | platform, audit, mail, resources (its `systemctl` runner) |
 | 4 | `files` | browse, Range downloads, delete, tus uploads (`uploads` table, staging, quotas, upload limits, hourly cleanup job) | accounts (`findById`, for `quota_bytes`), resources, storage, audit, settings |
 | 5 | `share-links` | `share_links`, `share_link_unlocks`, public share page API | files, storage, resources, accounts, audit |
+| 6 | `dashboard` | no tables; the admin Dashboard's counts, each one aggregate query in the module that owns the table (`countUsers`, `countPending`, `countByState`, `counts`) | accounts, invitations, resources, share-links |
 
 `storage` sits on its own so its correctness can be proven alone. It knows
 nothing about accounts or roles: callers pass it a resource root (or a home)

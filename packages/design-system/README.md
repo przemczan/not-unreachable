@@ -99,7 +99,7 @@ brand only through these, so a new logo changes `src/brand/` and nothing else. T
 ## Components
 
 - **core:** Button (+ ButtonLink, a link that looks like one), IconButton (+ IconButtonLink), Badge, Tag, Avatar, Card, Icon, Tooltip, Menu
-- **forms:** Field, Input, Combobox (an Input with suggestions under it), PasswordInput, CodeInput (a one-time code, one box per digit), Textarea, Select, Checkbox, Radio (+ RadioGroup), Switch, SegmentedControl, ExpiryPicker (presets and a custom time, or no expiry)
+- **forms:** Field, Input, Combobox (an Input with suggestions under it), PasswordInput, CodeInput (a one-time code, one box per digit), Textarea, Select, SelectMenu (a dropdown whose options can have a second line), Checkbox, Radio (+ RadioGroup), Switch, SegmentedControl, ExpiryPicker (presets and a custom time, or no expiry)
 - **navigation:** Sidebar, Topbar, PageHeader, Breadcrumbs, Tabs (+ TabPanel; link tabs for routes), Pagination (cursor-based)
 - **data:** DataTable, DescriptionList, CopyField (a value with a copy button), QrCodePanel (a QR code with its setup key), Timeline (flat or grouped by day)
 - **overlays:** Dialog, Drawer (native `<dialog>` + `showModal()`)

@@ -7,6 +7,7 @@ import {
   updateProfileRoute,
 } from "./account-settings.ts";
 import { exportAuditEventsRoute, listAuditEventsRoute } from "./audit-events.ts";
+import { getDashboardRoute } from "./dashboard.ts";
 import {
   createHomeFolderRoute,
   createResourceFolderRoute,
@@ -132,6 +133,7 @@ export * from "./uploads.ts";
 export * from "./upload-limits.ts";
 export * from "./share-links.ts";
 export * from "./updates.ts";
+export * from "./dashboard.ts";
 
 /** Every route of the API. The server registers only these, and the web client calls them by name. */
 export const routes = {
@@ -241,6 +243,7 @@ export const routes = {
   getUpdates: getUpdatesRoute,
   checkForUpdates: checkForUpdatesRoute,
   installUpdate: installUpdateRoute,
+  getDashboard: getDashboardRoute,
 } as const satisfies RouteTable;
 
 export type Routes = typeof routes;

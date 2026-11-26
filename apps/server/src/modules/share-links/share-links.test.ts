@@ -237,6 +237,29 @@ describe("the Share links screen", () => {
     expect((await list({ state: "active" })).shareLinks[0]).toMatchObject({ id: locked.id, locked: false, lockedUntil: null });
   });
 
+  it("counts the links in each state as the filters read them, the active ones locked, and every link's downloads", async () => {
+    const counts = () => app.test.services.shareLinks.counts();
+    expect(counts()).toEqual({ active: 0, expired: 0, revoked: 0, locked: 0, downloads: 0 });
+
+    const active = (await app.createLink({ path: "single.txt", noExpiry: true })).shareLink;
+    const expiring = (await app.createLink({ path: "docs", expiresAt: isoIn(HOUR_MS) })).shareLink;
+    const revoked = (await app.createLink({ path: "docs/report.pdf" })).shareLink;
+    const locked = (await app.createLink({ path: "single.txt", password: linkPassword })).shareLink;
+    expect((await app.asAdmin(routes.revokeShareLink, { params: revoked.id })).statusCode).toBe(200);
+    const setRow = app.test.database.sqlite.prepare("UPDATE share_links SET locked_until = ?, download_count = ? WHERE id = ?");
+    setRow.run(null, 3, active.id);
+    setRow.run(isoIn(2 * HOUR_MS), 4, expiring.id);
+    setRow.run(isoIn(2 * HOUR_MS), 5, revoked.id);
+    setRow.run(isoIn(30 * MINUTE_MS), 0, locked.id);
+    expect(counts()).toEqual({ active: 3, expired: 0, revoked: 1, locked: 2, downloads: 12 });
+
+    // An hour on, the expiring link is expired, so its lock no longer counts, and the other lock is over.
+    app.test.clock.advance(HOUR_MS);
+    expect(counts()).toEqual({ active: 2, expired: 1, revoked: 1, locked: 0, downloads: 12 });
+    expect((await list({ state: "active" })).shareLinks).toHaveLength(2);
+    expect((await list({ state: "expired" })).shareLinks).toHaveLength(1);
+  });
+
   it("gets one link with its whole URL, built from PUBLIC_ORIGIN whatever the request's host", async () => {
     const created = await app.createLink({ path: "single.txt", password: linkPassword });
     const response = await app.asAdmin(routes.getShareLink, {

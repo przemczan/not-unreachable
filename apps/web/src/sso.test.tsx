@@ -156,7 +156,7 @@ describe("signing in with a provider", () => {
 describe("/sign-in/complete", () => {
   it.each<[string, Session, string]>([
     ["the admin pending the second factor", { ...adminSession, state: "pendingSecondFactor" }, "/sign-in/second-factor"],
-    ["the admin", adminSession, "/admin/audit-log"],
+    ["the admin", adminSession, "/admin/dashboard"],
     ["a user", userSession, "/files"],
   ])("sends %s on", async (_who, session, expected) => {
     sessionStorage.clear();

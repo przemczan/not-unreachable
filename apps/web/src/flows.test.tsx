@@ -154,7 +154,7 @@ describe("sign-in", () => {
   });
 
   it.each([
-    ["admin", adminSession, "/admin/audit-log", "Audit log"],
+    ["admin", adminSession, "/admin/dashboard", "Dashboard"],
     ["user", userSession, "/files", "Files"],
   ] as const)("lands the %s in its own interface", async (_role, session, path, heading) => {
     stubApi(signInHandlers(() => json(200, session), session));
@@ -169,10 +169,10 @@ describe("sign-in", () => {
 
   it.each([
     ["/settings/sessions", "/settings/sessions"],
-    ["//evil.example", "/admin/audit-log"],
-    ["/\\evil.example", "/admin/audit-log"],
-    ["https://evil.example/admin", "/admin/audit-log"],
-    ["/files", "/admin/audit-log"],
+    ["//evil.example", "/admin/dashboard"],
+    ["/\\evil.example", "/admin/dashboard"],
+    ["https://evil.example/admin", "/admin/dashboard"],
+    ["/files", "/admin/dashboard"],
   ])("goes on to ?next=%s only when it is safe", async (next, landsOn) => {
     stubApi({
       ...signInHandlers(() => json(200, adminSession)),
@@ -282,7 +282,7 @@ describe("password settings", () => {
 describe("wrong-role access", () => {
   it.each([
     ["user", userSession, "/admin/settings/security", "/files"],
-    ["admin", adminSession, "/files", "/admin/audit-log"],
+    ["admin", adminSession, "/files", "/admin/dashboard"],
   ] as const)("sends the %s from %s to its own interface", async (_role, session, path, landsOn) => {
     stubApi(baseHandlers({ session }));
     const { router } = renderApp(path);

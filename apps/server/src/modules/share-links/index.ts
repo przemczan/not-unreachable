@@ -13,6 +13,7 @@ import { createShareLinksService, type ShareLinksService } from "./service.ts";
 export { createShareLinksHandlers, type ShareLinksRoutes } from "./routes.ts";
 export { shareLinks, shareLinkUnlocks, type ShareLinkRow, type ShareLinkUnlockRow } from "./schema.ts";
 export { tokenAad, type ShareLinksService } from "./service.ts";
+export type { ShareLinkCounts } from "./repository.ts";
 export type { PublicShareLinks } from "./public.ts";
 export type { ShareTokenLimit } from "./limits.ts";
 

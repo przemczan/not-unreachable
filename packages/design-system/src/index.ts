@@ -31,6 +31,7 @@ export * from "./components/QuotaMeter/index.ts";
 export * from "./components/Radio/index.ts";
 export * from "./components/SegmentedControl/index.ts";
 export * from "./components/Select/index.ts";
+export * from "./components/SelectMenu/index.ts";
 export * from "./components/Sidebar/index.ts";
 export * from "./components/Switch/index.ts";
 export * from "./components/Tabs/index.ts";

@@ -124,8 +124,8 @@ describe("second-factor step", () => {
     fireEvent.change(field, { target: { value: " ABCDE-FGH23 " } });
     fireEvent.click(screen.getByRole("button", { name: "Verify" }));
 
-    expect(await screen.findByRole("heading", { level: 1, name: "Audit log" })).toBeDefined();
-    expect(locationOf(router)).toBe("/admin/audit-log");
+    expect(await screen.findByRole("heading", { level: 1, name: "Dashboard" })).toBeDefined();
+    expect(locationOf(router)).toBe("/admin/dashboard");
     expect(requestsTo(fetchMock, "POST /api/v1/sign-in/second-factor/recovery-code").map(bodyOf)).toEqual([
       { code: "ZZZZZ-ZZZZZ" },
       { code: "ABCDE-FGH23" },
@@ -165,8 +165,8 @@ describe("second-factor step", () => {
     expect(proceed.disabled).toBe(false);
     fireEvent.click(proceed);
 
-    expect(await screen.findByRole("heading", { level: 1, name: "Audit log" })).toBeDefined();
-    expect(locationOf(router)).toBe("/admin/audit-log");
+    expect(await screen.findByRole("heading", { level: 1, name: "Dashboard" })).toBeDefined();
+    expect(locationOf(router)).toBe("/admin/dashboard");
     expect(requestsTo(fetchMock, "POST /api/v1/sign-in/second-factor/enrol/totp")).toHaveLength(1);
     expect(requestsTo(fetchMock, "POST /api/v1/sign-in/second-factor/enrol/totp/confirm").map(bodyOf)).toEqual([
       { id: enrolment.id, code: "000000" },

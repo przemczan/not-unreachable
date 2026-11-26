@@ -43,8 +43,19 @@ export interface HomeRootChange {
   readonly subpath: string;
 }
 
+/** How many resources are available and unavailable. */
+export interface ResourceCounts {
+  readonly available: number;
+  readonly unavailable: number;
+}
+
 export interface ResourcesService {
   list(): ResourceList;
+  /**
+   * The resources by the state the list shows: the one stored on each row, which startup, Retry and
+   * the automatic retries keep up to date. One aggregate query; it checks no folder or share.
+   */
+  countByState(): ResourceCounts;
   /** Throws {@link ResourceNotFoundError}. */
   get(id: string): Resource;
   /** Throws {@link FolderRefusedError}, {@link ShareRefusedError}, {@link ResourceNameTakenError}; records `resource.added`. */
@@ -223,6 +234,8 @@ export function createResourcesServiceWith({ repository, kinds, audit, clock, lo
   const homeFor = async (username: string): Promise<RealPath> => (await containedHome(username)).absolute;
 
   return {
+    countByState: () => repository.countByState(),
+
     list() {
       const homeRoot = repository.findHomeRoot();
       return {

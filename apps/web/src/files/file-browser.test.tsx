@@ -534,6 +534,46 @@ describe("file browser (admin)", () => {
     expect(sortsSent(fetchMock, `GET ${entriesPath}`)).toEqual(["size desc"]);
   });
 
+  it("switches resources with the Resource picker, each worded by its kind and location", async () => {
+    const nas: Resource = {
+      id: "5d0c5f8e-2b8a-4c47-9d1e-6a8f0b1c2d04",
+      kind: "smb",
+      name: "NAS",
+      host: "nas.local",
+      share: "files",
+      subfolder: "family",
+      username: "alice",
+      domain: "",
+      protocol: "3.1.1",
+      encrypt: true,
+      smbPasswordSet: true,
+      state: "available",
+      unavailableReason: null,
+      isHomeRoot: false,
+      createdAt: "2026-11-22T10:00:00.000Z",
+    };
+    stubApi(
+      adminHandlers({
+        "GET /api/v1/admin/resources": () => json(200, { resources: [media, nas], homeRoot: null }),
+        [`GET /api/v1/admin/resources/${nas.id}/entries`]: () => json(200, page("", [report])),
+      }),
+    );
+    const { router } = renderApp(`/admin/files/${media.id}`);
+    await screen.findByRole("table", { name: "Media" });
+
+    const picker = screen.getByRole("combobox", { name: "Resource" });
+    expect(picker.textContent).toBe("Media");
+    fireEvent.click(picker);
+    expect(screen.getByRole("option", { name: /^Media/ }).textContent).toContain("Local folder · /srv/media");
+    const nasOption = screen.getByRole("option", { name: /^NAS/ });
+    expect(nasOption.textContent).toContain("SMB share · //nas.local/files/family");
+    fireEvent.click(nasOption);
+
+    await screen.findByRole("table", { name: "NAS" });
+    expect(locationOf(router)).toBe(`/admin/files/${nas.id}`);
+    expect(screen.getByRole("combobox", { name: "Resource" }).textContent).toBe("NAS");
+  });
+
   it("says when there is no resource to browse", async () => {
     stubApi(adminHandlers({ "GET /api/v1/admin/resources": () => json(200, { resources: [], homeRoot: null }) }));
     renderApp("/admin/files");

@@ -1,5 +1,5 @@
 import { resourceKinds, resourceStates, smbProtocols, unavailableReasons } from "@not-unreachable/contracts";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import type { Db } from "../platform/index.ts";
 import {
   homes,
@@ -30,6 +30,8 @@ export interface ResourcesRepository {
   transaction<T>(work: () => T): T;
 
   listResources(): ResourceRow[];
+  /** The resources by their stored state, in one aggregate query. */
+  countByState(): { readonly available: number; readonly unavailable: number };
   findResource(id: string): ResourceRow | undefined;
   findResourceByName(name: string): ResourceRow | undefined;
   findHomeRoot(): ResourceRow | undefined;
@@ -50,6 +52,16 @@ export function createResourcesRepository(db: Db): ResourcesRepository {
     transaction: (work) => db.transaction(() => work()),
 
     listResources: () => db.select().from(resources).orderBy(asc(resources.name), asc(resources.id)).all(),
+    countByState() {
+      const counts = db
+        .select({
+          available: sql<number>`count(*) filter (where ${eq(resources.state, "available")})`.mapWith(Number),
+          unavailable: sql<number>`count(*) filter (where ${eq(resources.state, "unavailable")})`.mapWith(Number),
+        })
+        .from(resources)
+        .get();
+      return { available: counts?.available ?? 0, unavailable: counts?.unavailable ?? 0 };
+    },
     findResource: (id) => db.select().from(resources).where(eq(resources.id, id)).get(),
     findResourceByName: (name) => db.select().from(resources).where(eq(resources.name, name)).get(),
     findHomeRoot: () => db.select().from(resources).where(eq(resources.isHomeRoot, true)).get(),

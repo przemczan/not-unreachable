@@ -15,6 +15,7 @@ const sectionsByRole: Record<Role, SidebarSection[]> = {
     {
       title: "Manage",
       items: [
+        { id: "dashboard", label: "Dashboard", icon: "layout-dashboard", href: "/admin/dashboard" },
         { id: "files", label: "Files", icon: "files", href: "/admin/files" },
         { id: "share-links", label: "Share links", icon: "share-2", href: "/admin/share-links" },
         { id: "users", label: "Users", icon: "users", href: "/admin/users" },

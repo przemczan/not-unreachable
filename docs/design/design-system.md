@@ -363,7 +363,9 @@ rows with ProgressBar and pause/resume/cancel IconButtons), `QuotaMeter`
 (ProgressBar + "4.2 / 10 GB" caption), `QrCodePanel`, `ExpiryPicker`
 (SegmentedControl presets "1 day / 7 days / 30 days / Custom" + a native
 `datetime-local` Input), `Disclosure` (a native `<details>` with a titled
-summary, for help a form doesn't always need).
+summary, for help a form doesn't always need), `SelectMenu` (a select-only
+combobox whose options have a label and a second line, such as the resource
+picker on admin Files).
 
 **Layouts**, after the source's patterns:
 
@@ -382,7 +384,8 @@ summary, for help a form doesn't always need).
 | Sign-in | both | AuthLayout | Input (lg), PasswordInput, Button `accent` lg full width, "or" divider, Button `secondary` per SSO provider and "Sign in with a passkey" (Icon `key-round`), Alert for errors | Login |
 | Second factor | both | AuthLayout | CodeInput, Button, link "Use a recovery code"; when the admin has no factor yet (enrol): QrCodePanel with the setup key in CopyField, CodeInput, the 10 recovery codes in `type-mono` with Copy and "Download codes", Checkbox "I saved them" | Login |
 | First-run setup, invitation, re-link | both | AuthLayout | Field, Input, PasswordInput with hint, QrCodePanel, recovery codes in `type-mono` with CopyField and "Download codes" (setup); invitation: Field and Input for username and display name, Button `secondary` "Continue with <provider>" per SSO provider; re-link: the same provider Buttons, no fields | Login |
-| Files | both | AppShell | PageHeader with actions (Upload files, New folder), Breadcrumbs for the path, DataTable (name with file-type Icon, size `num` right-aligned, modified relative time, row Menu: Download, Share link (admin), Delete; sortable by Name, Size or Modified on the server, folders always first, the choice remembered in the browser; the hovered row highlighted), EmptyState, DropZone, Dialog to confirm delete ("Delete 3 files?") | Users |
+| Dashboard | admin | AppShell | PageHeader, a grid of Cards, one per count (Users, Invitations, Resources, Share links) with the value in `type-metric` `num`, a muted breakdown ("2 disabled", "5 expired · 1 revoked · 2 locked", total downloads) and a link to its page; Card "Recent activity" with the 5 newest audit events as a day-grouped Timeline and a "View audit log" link; EmptyState "No activity yet"; Alert with "Try again" when a part can't load | Dashboard |
+| Files | both | AppShell | PageHeader with actions (Upload files, New folder; admin: a SelectMenu "Resource" to switch resource when more than one is available), Breadcrumbs for the path, DataTable (name with file-type Icon, size `num` right-aligned, modified relative time, row Menu: Download, Share link (admin), Delete; sortable by Name, Size or Modified on the server, folders always first, the choice remembered in the browser; the hovered row highlighted), EmptyState, DropZone, Dialog to confirm delete ("Delete 3 files?") | Users |
 | Upload queue | both | AppShell | UploadQueue docked bottom-right, Toast "Upload complete" | – |
 | Create / edit share link | admin | Dialog | Switch "Require a password", PasswordInput, ExpiryPicker, Alert `warning` for "No expiry", CopyField | UserDetail (suspend Dialog) |
 | Share links | admin | AppShell | DataTable (item, Badge expiry, Badge password, Badge `danger` "Locked" while locked after wrong passwords, downloads `num`, created), Tag filters (Active / Expired / Revoked), row Menu (Copy link, Edit, Revoke) | Users |

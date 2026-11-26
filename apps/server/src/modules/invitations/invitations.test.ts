@@ -188,6 +188,23 @@ describe("Invitations (the admin's tab)", () => {
     ]);
   });
 
+  it("counts the invitations the list shows as pending, and no re-link link", async () => {
+    expect(test.services.invitations.countPending()).toBe(0);
+    await createTestInvitation(test, { expiresInDays: 1 });
+    await createTestInvitation(test, { expiresInDays: 30 });
+    const revoked = await createTestInvitation(test);
+    test.services.invitations.revoke(revoked.id, systemContext);
+    const used = await createTestInvitation(test);
+    expectSignedInAt(await accept(used.token, { username: "winner" }, { sub: "winner-sub" }));
+    await createTestRelink(test, test.createUser({ username: "relinked" }).id);
+    expect(test.services.invitations.countPending()).toBe(2);
+
+    test.clock.advance(2 * DAY_MS);
+    expect(test.services.invitations.countPending()).toBe(1);
+    const pending = test.services.invitations.list().invitations.filter((invitation) => invitation.state === "pending");
+    expect(pending).toHaveLength(1);
+  });
+
   it("copies a pending invitation's link again, and only a pending one's", async () => {
     const invitation = await createTestInvitation(test);
     const copied = await callRoute(test, routes.getInvitationLink, { cookie: adminCookie, params: invitation.id });

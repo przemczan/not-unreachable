@@ -1,5 +1,6 @@
 import { createAccountsModule, type AccountsService, type PasswordHashingParameters, type SetupService } from "./modules/accounts/index.ts";
 import { createAuditService, type AuditService } from "./modules/audit/index.ts";
+import { createDashboardService, type DashboardService } from "./modules/dashboard/index.ts";
 import {
   createInvitationsModule,
   type InvitationsService,
@@ -75,6 +76,8 @@ export interface AppServices {
   readonly shareTokenLimit: ShareTokenLimit;
   /** Settings → Updates: the release check and, while `UPDATE_FROM_UI` is on, installing from there. */
   readonly updates: UpdatesService;
+  /** The admin Dashboard's counts. */
+  readonly dashboard: DashboardService;
 }
 
 /** Where uploads are staged and how free space is read; tests pass a temp folder and fakes. */
@@ -215,6 +218,12 @@ export function createServices({
     dataDir: resourceRoots.dataDir,
     options: updatesOptions,
   });
+  const dashboard = createDashboardService({
+    accounts,
+    invitations: invitations.invitations,
+    resources,
+    shareLinks: shareLinks.shareLinks,
+  });
   return {
     settings,
     audit,
@@ -240,5 +249,6 @@ export function createServices({
     publicShareLinks: shareLinks.publicShareLinks,
     shareTokenLimit: shareLinks.shareTokenLimit,
     updates,
+    dashboard,
   };
 }

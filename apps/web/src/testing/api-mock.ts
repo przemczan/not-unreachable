@@ -1,4 +1,4 @@
-import { problemMediaType, problemTypes, type Session } from "@not-unreachable/contracts";
+import { problemMediaType, problemTypes, type Dashboard, type Session } from "@not-unreachable/contracts";
 import { vi } from "vitest";
 
 export interface MockRequest {
@@ -56,6 +56,14 @@ export const userSession: Session = {
   recentSignInUntil: null,
 };
 
+/** The Dashboard's counts of a new instance: nothing yet. */
+export const emptyDashboard: Dashboard = {
+  users: { active: 0, disabled: 0 },
+  pendingInvitations: 0,
+  resources: { available: 0, unavailable: 0 },
+  shareLinks: { active: 0, expired: 0, revoked: 0, locked: 0, downloads: 0 },
+};
+
 export interface BaseApiOptions {
   /** @defaultValue true */
   readonly adminExists?: boolean;
@@ -69,6 +77,7 @@ export function baseHandlers({ adminExists = true, session = null }: BaseApiOpti
     "GET /api/v1/setup/status": () => json(200, { adminExists }),
     "GET /api/v1/session": () => (session === null ? problem(401, problemTypes.signInRequired, "Sign in") : json(200, session)),
     "GET /api/v1/admin/audit-events": () => json(200, { events: [], nextCursor: null }),
+    "GET /api/v1/admin/dashboard": () => json(200, emptyDashboard),
     "GET /api/v1/sso/providers": () => json(200, { providers: [] }),
     "GET /api/v1/home/entries": () => json(200, { path: "", entries: [], nextCursor: null }),
     "GET /api/v1/home/quota": () => json(200, { usedBytes: 0, limitBytes: 10_000_000_000 }),

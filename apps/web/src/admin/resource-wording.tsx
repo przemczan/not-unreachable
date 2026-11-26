@@ -7,6 +7,7 @@ import {
   type FolderRefusal,
   type Resource,
   type ResourceCheck,
+  type ResourceKind,
   type ShareFailure,
   type SmbProtocol,
   type UnavailableReason,
@@ -26,6 +27,12 @@ export const unavailableReasonLabels: Record<UnavailableReason, string> = {
   "not-supported": "Protocol not supported",
   "mount-failed": "Mount failed",
   "helper-unavailable": "Mounting isn't set up",
+};
+
+/** What kind of resource it is, as the Add resource menu and the Files resource picker word it. */
+export const resourceKindLabels: Record<ResourceKind, string> = {
+  local: "Local folder",
+  smb: "SMB share",
 };
 
 /** The warning the form and the Resources list show for a share whose traffic isn't encrypted. */

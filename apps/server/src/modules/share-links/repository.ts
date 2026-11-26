@@ -28,6 +28,15 @@ export interface ShareLinksPosition {
   readonly id: string;
 }
 
+/** How many links are in each state, how many active ones are locked, and the downloads of all of them. */
+export interface ShareLinkCounts {
+  readonly active: number;
+  readonly expired: number;
+  readonly revoked: number;
+  readonly locked: number;
+  readonly downloads: number;
+}
+
 export interface ShareLinksRepository {
   /** Runs `work` in one SQLite transaction; it must not await. */
   transaction<T>(work: () => T): T;
@@ -41,6 +50,11 @@ export interface ShareLinksRepository {
     after: ShareLinksPosition | undefined,
     limit: number,
   ): ShareLinkRow[];
+  /**
+   * The links in each state at `now` (as the list's filters read them), the active ones locked at
+   * `now`, and every link's downloads added up, in one aggregate query.
+   */
+  counts(now: string): ShareLinkCounts;
   /**
    * The links active at `now` that this user can open: every "Signed-in users" link and every
    * "Selected users" link that lists them. Newest first, after `after`; at most `limit`.
@@ -80,6 +94,12 @@ const stateConditions: Readonly<Record<ShareLinkState, (now: string) => SQL | un
   active: (now) => and(isNull(shareLinks.revokedAt), or(isNull(shareLinks.expiresAt), gt(shareLinks.expiresAt, now))),
 };
 
+/** Locked after wrong passwords at `now`, as the service's `isLocked` reads a row. */
+const lockedAt = (now: string): SQL | undefined => and(isNotNull(shareLinks.lockedUntil), gt(shareLinks.lockedUntil, now));
+
+/** `count(*)` of the rows that meet the condition, as a number. */
+const countWhere = (condition: SQL | undefined): SQL<number> => sql<number>`count(*) filter (where ${condition ?? sql`1`})`.mapWith(Number);
+
 /** Links after `after` in the lists' order, newest first. */
 const afterPosition = (after: ShareLinksPosition | undefined): SQL | undefined =>
   after === undefined
@@ -112,6 +132,25 @@ export function createShareLinksRepository(db: Db): ShareLinksRepository {
         .orderBy(desc(shareLinks.createdAt), desc(shareLinks.id))
         .limit(limit)
         .all(),
+    counts(now) {
+      const counts = db
+        .select({
+          active: countWhere(stateConditions.active(now)),
+          expired: countWhere(stateConditions.expired(now)),
+          revoked: countWhere(stateConditions.revoked(now)),
+          locked: countWhere(and(stateConditions.active(now), lockedAt(now))),
+          downloads: sql<number>`coalesce(sum(${shareLinks.downloadCount}), 0)`.mapWith(Number),
+        })
+        .from(shareLinks)
+        .get();
+      return {
+        active: counts?.active ?? 0,
+        expired: counts?.expired ?? 0,
+        revoked: counts?.revoked ?? 0,
+        locked: counts?.locked ?? 0,
+        downloads: counts?.downloads ?? 0,
+      };
+    },
     listSharedWith: (userId, now, after, limit) =>
       db
         .select()

@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, isNull, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, gt, isNull, type SQL } from "drizzle-orm";
 import type { Db } from "../platform/index.ts";
 import { invitations, reservedUsernames, type InvitationRow, type ReservedUsernameRow } from "./schema.ts";
 
@@ -11,6 +11,8 @@ export interface InvitationsRepository {
   findByTokenHash(tokenHash: string): InvitationRow | undefined;
   /** Kind `invite`, newest first. */
   listInvites(): InvitationRow[];
+  /** How many of kind `invite` are pending at `at` (as {@link listInvites}' rows read then), in one aggregate query. */
+  countPendingInvites(at: string): number;
   /** Revokes the link while it is pending at `at`; answers whether this call did. */
   revoke(id: string, at: string): boolean;
   /** Revokes the user's re-link links still pending at `at`; answers how many. */
@@ -43,6 +45,12 @@ export function createInvitationsRepository(db: Db): InvitationsRepository {
     findByTokenHash: (tokenHash) => db.select().from(invitations).where(eq(invitations.tokenHash, tokenHash)).get(),
     listInvites: () =>
       db.select().from(invitations).where(eq(invitations.kind, "invite")).orderBy(desc(invitations.createdAt), desc(invitations.id)).all(),
+    countPendingInvites: (at) =>
+      db
+        .select({ pending: count() })
+        .from(invitations)
+        .where(and(eq(invitations.kind, "invite"), pendingAt(at)))
+        .get()?.pending ?? 0,
     revoke: (id, at) =>
       db
         .update(invitations)

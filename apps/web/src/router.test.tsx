@@ -38,12 +38,12 @@ describe("router", () => {
     expect(locationOf(router)).toBe(`/sign-in?next=${encodeURIComponent(path)}`);
   });
 
-  it.each(["/", "/admin", "/files", "/sign-in"])("lands the admin on /admin/audit-log from %s", async (path) => {
+  it.each(["/", "/admin", "/files", "/sign-in"])("lands the admin on /admin/dashboard from %s", async (path) => {
     stubApi(baseHandlers({ session: adminSession }));
     const { router } = renderApp(path);
 
-    expect(await screen.findByRole("heading", { level: 1, name: "Audit log" })).toBeDefined();
-    expect(locationOf(router)).toBe("/admin/audit-log");
+    expect(await screen.findByRole("heading", { level: 1, name: "Dashboard" })).toBeDefined();
+    expect(locationOf(router)).toBe("/admin/dashboard");
   });
 
   it.each(["/", "/admin", "/admin/settings/security", "/sign-in"])("lands a user on /files from %s", async (path) => {
@@ -62,6 +62,7 @@ describe("router", () => {
     const nav = await screen.findByRole("navigation", { name: "Main" });
     const links = within(nav).getAllByRole("link");
     expect(links.map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
+      ["Dashboard", "/admin/dashboard"],
       ["Files", "/admin/files"],
       ["Share links", "/admin/share-links"],
       ["Users", "/admin/users"],

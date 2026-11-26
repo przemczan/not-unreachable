@@ -293,6 +293,24 @@ describe("the resources service", () => {
       expect(service.get(resource.id).state).toBe("available");
     });
 
+    it("counts the resources by the state the list shows", async () => {
+      expect(service.countByState()).toEqual({ available: 0, unavailable: 0 });
+      await service.add(local("A", folder("a")), actor);
+      await service.add(local("B", folder("b")), actor);
+      const gone = await service.add(local("C", folder("c")), actor);
+      expect(service.countByState()).toEqual({ available: 3, unavailable: 0 });
+
+      rmSync(join(dir, "c"), { recursive: true });
+      await service.checkAtStartup();
+      expect(service.countByState()).toEqual({ available: 2, unavailable: 1 });
+      expect(
+        service
+          .list()
+          .resources.filter((resource) => resource.state === "unavailable")
+          .map((resource) => resource.id),
+      ).toEqual([gone.id]);
+    });
+
     it("re-fixes the real path when the admin saves the path again", async () => {
       const link = join(dir, "link");
       symlinkSync(folder("a"), link);

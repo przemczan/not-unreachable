@@ -50,7 +50,7 @@ test("the admin invites someone, who creates their account with a provider and l
   page.on("pageerror", (error) => errors.push(error.message));
 
   await signInAsAdmin(page);
-  await expect(page).toHaveURL("/admin/audit-log");
+  await expect(page).toHaveURL("/admin/dashboard");
   await ensureMockOidcProvider(page);
   await setHomeRoot(page, "Invitation homes", folder);
 
@@ -112,7 +112,7 @@ test("a re-link link swaps the user's sign-in for a new identity and signs them 
   await expectSignedInToFiles(before);
 
   await signInAsAdmin(page);
-  await expect(page).toHaveURL("/admin/audit-log");
+  await expect(page).toHaveURL("/admin/dashboard");
   await page.goto("/admin/users");
   const row = page.getByRole("table", { name: "Users" }).getByRole("row").filter({ hasText: invitee.username });
   await row.getByRole("button", { name: `Actions for ${invitee.displayName}` }).click();
@@ -163,7 +163,7 @@ test("an invitation that requires a verified email accepts only the account with
   const stranger = `stranger-${suffix}`;
 
   await signInAsAdmin(page);
-  await expect(page).toHaveURL("/admin/audit-log");
+  await expect(page).toHaveURL("/admin/dashboard");
   await page.goto("/admin/users/invitations");
   await page.getByRole("button", { name: "Invite user" }).first().click();
   const invite = page.getByRole("dialog", { name: "Invite user" });

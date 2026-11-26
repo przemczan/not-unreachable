@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from "react-router";
 import { AccountShell } from "../layout/index.ts";
 import { RequireAccount } from "../session/index.ts";
 import { AuditLogPage } from "./audit-log.tsx";
+import { DashboardPage } from "./dashboard.tsx";
 import { AdminFilesPage } from "./files.tsx";
 import { ResourcesPage } from "./resources.tsx";
 import { AdminSettingsPage } from "./settings.tsx";
@@ -12,6 +13,7 @@ import { UsersPage } from "./users.tsx";
 /** The pages under /admin, by their first segment: the Sidebar item and the breadcrumb. */
 const pages = new Map([
   ["audit-log", "Audit log"],
+  ["dashboard", "Dashboard"],
   ["files", "Files"],
   ["resources", "Resources"],
   ["settings", "Settings"],
@@ -35,7 +37,8 @@ export function Component() {
         breadcrumbs={label === undefined ? undefined : <Breadcrumbs items={[{ label }]} />}
       >
         <Routes>
-          <Route index element={<Navigate replace to="/admin/audit-log" />} />
+          <Route index element={<Navigate replace to="/admin/dashboard" />} />
+          <Route path="dashboard" element={<DashboardPage />} />
           <Route path="audit-log" element={<AuditLogPage />} />
           <Route path="files" element={<AdminFilesPage />} />
           <Route path="files/:resourceId" element={<AdminFilesPage />} />

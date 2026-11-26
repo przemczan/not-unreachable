@@ -26,7 +26,7 @@ test("the admin adds a local folder and sets it as the home root", async ({ page
   page.on("pageerror", (error) => errors.push(error.message));
 
   await signInAsAdmin(page);
-  await expect(page).toHaveURL("/admin/audit-log");
+  await expect(page).toHaveURL("/admin/dashboard");
 
   await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Resources" }).click();
   await expect(page).toHaveURL("/admin/resources");

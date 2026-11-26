@@ -49,6 +49,7 @@ import {
   RadioGroup,
   SegmentedControl,
   Select,
+  SelectMenu,
   Sidebar,
   Switch,
   TabPanel,
@@ -220,6 +221,24 @@ const cases: Readonly<Record<string, Case>> = {
   },
   Select: {
     element: <Select label="Role" placeholder="Pick one" options={["Admin", { value: "user", label: "User" }]} hint="Their access" />,
+  },
+  SelectMenu: {
+    element: (
+      <SelectMenu
+        label="Resource"
+        hint="Whose files to show"
+        value="media"
+        onChange={() => undefined}
+        options={[
+          { value: "media", label: "Media", description: "Local folder · /srv/media" },
+          { value: "nas", label: "NAS" },
+        ]}
+      />
+    ),
+    interact: async (user) => {
+      await user.click(screen.getByRole("combobox", { name: "Resource" }));
+      expect(screen.getByRole("listbox")).toBeTruthy();
+    },
   },
   Sidebar: { element: <Sidebar header={<Logo />} sections={sections} activeId="files" footer="Footer" /> },
   Switch: { element: <Switch label="Notifications" description="By email" /> },

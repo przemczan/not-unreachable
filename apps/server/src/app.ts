@@ -13,6 +13,7 @@ import { registerSecurityHeaders, securityHeaders } from "./http/security-header
 import { registerStaticWeb } from "./http/static-web.ts";
 import { createAccountsHandlers } from "./modules/accounts/index.ts";
 import { createAuditHandlers } from "./modules/audit/index.ts";
+import { createDashboardHandlers } from "./modules/dashboard/index.ts";
 import { createFilesHandlers } from "./modules/files/index.ts";
 import { healthHandlers } from "./modules/health/index.ts";
 import { createInvitationsHandlers, registerLinkPageLimit } from "./modules/invitations/index.ts";
@@ -128,6 +129,7 @@ export async function buildApp<Extra extends RouteTable = RouteTable>(
     ...createFilesHandlers(services.files, services.uploads),
     ...createShareLinksHandlers(services.shareLinks, services.publicShareLinks),
     ...createUpdatesHandlers(services.updates),
+    ...createDashboardHandlers(services.dashboard),
   });
   registerAllowFolder(app, config, services);
   registerUpdates(app, config, services);

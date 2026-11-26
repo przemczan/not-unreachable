@@ -140,7 +140,7 @@ describe("signing in with a passkey alone", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Sign in with a passkey" }));
 
-    expect(await screen.findByRole("heading", { level: 1, name: "Audit log" })).toBeDefined();
+    expect(await screen.findByRole("heading", { level: 1, name: "Dashboard" })).toBeDefined();
     expect(router.state.location.pathname.startsWith("/admin")).toBe(true);
   });
 
@@ -217,8 +217,8 @@ describe("the second-factor step with a passkey", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Use passkey" }));
 
-    expect(await screen.findByRole("heading", { level: 1, name: "Audit log" })).toBeDefined();
-    expect(locationOf(router)).toBe("/admin/audit-log");
+    expect(await screen.findByRole("heading", { level: 1, name: "Dashboard" })).toBeDefined();
+    expect(locationOf(router)).toBe("/admin/dashboard");
     expect(requestsTo(fetchMock, "POST /api/v1/sign-in/second-factor/passkey/verify").map(bodyOf)).toEqual([{ response: assertion }]);
   });
 
@@ -286,8 +286,8 @@ describe("the second-factor step with a passkey", () => {
     fireEvent.click(screen.getByLabelText("I saved my recovery codes"));
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
-    expect(await screen.findByRole("heading", { level: 1, name: "Audit log" })).toBeDefined();
-    expect(locationOf(router)).toBe("/admin/audit-log");
+    expect(await screen.findByRole("heading", { level: 1, name: "Dashboard" })).toBeDefined();
+    expect(locationOf(router)).toBe("/admin/dashboard");
     expect(webauthn.startRegistration).toHaveBeenCalledWith({ optionsJSON: creationOptions });
     expect(requestsTo(fetchMock, "POST /api/v1/sign-in/second-factor/enrol/passkey").map(bodyOf)).toEqual([
       { name: "Laptop", response: registration },

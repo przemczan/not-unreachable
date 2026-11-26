@@ -52,7 +52,8 @@ test("the admin signs in with a recovery code instead", async ({ page }) => {
   await screenshot(page, "second-factor-recovery-code");
   await page.getByRole("button", { name: "Verify" }).click();
 
-  await expect(page).toHaveURL("/admin/audit-log");
+  await expect(page).toHaveURL("/admin/dashboard");
+  await page.goto("/admin/audit-log");
   await expect(page.getByRole("listitem").filter({ hasText: "Recovery code used" }).first()).toBeVisible();
 });
 

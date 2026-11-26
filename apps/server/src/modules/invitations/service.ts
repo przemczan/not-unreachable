@@ -24,6 +24,11 @@ export type NewInvitation = z.output<typeof createInvitationRequestSchema>;
 export interface InvitationsService {
   list(): Invitations;
   /**
+   * How many invitations the list would show as `pending` now: neither accepted nor revoked, and not
+   * expired. Re-link links aren't invitations, so they don't count. One aggregate query.
+   */
+  countPending(): number;
+  /**
    * 409 `home-root-not-set` while there is no home root, 409 `smtp-not-configured` when asked to send
    * it without SMTP. Emails the link only when asked; a failed email doesn't fail it.
    */
@@ -101,6 +106,8 @@ export function createInvitationsService({
 
   return {
     list: () => ({ invitations: repository.listInvites().map(toInvitation) }),
+
+    countPending: () => repository.countPendingInvites(clock.now().toISOString()),
 
     async create({ email, expiresInDays, sendByEmail, verifyEmail }, context) {
       if (!resources.isHomeRootSet()) {

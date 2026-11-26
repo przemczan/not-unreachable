@@ -22,7 +22,13 @@ import { isProblem, problemMessage } from "../lib/index.ts";
 import { isRecentSignInCancelled, useRecentSignIn } from "../session/index.ts";
 import { HomeRootCard } from "./home-root.tsx";
 import { ResourceDrawer, resourcesQueryKey, type ResourceDrawerState } from "./resource-drawer.tsx";
-import { isUnencryptedShare, resourceLocationOf, UNENCRYPTED_WARNING, unavailableReasonLabels } from "./resource-wording.tsx";
+import {
+  isUnencryptedShare,
+  resourceKindLabels,
+  resourceLocationOf,
+  UNENCRYPTED_WARNING,
+  unavailableReasonLabels,
+} from "./resource-wording.tsx";
 
 /** Why the server kept a resource it was asked to remove. */
 function removeErrorOf(error: unknown): string {
@@ -168,8 +174,16 @@ export function ResourcesPage() {
         </Button>
       }
       items={[
-        { label: "Local folder", icon: <Icon name="folder" size={14} />, onSelect: () => setDrawer({ mode: "add", kind: "local" }) },
-        { label: "SMB share", icon: <Icon name="hard-drive" size={14} />, onSelect: () => setDrawer({ mode: "add", kind: "smb" }) },
+        {
+          label: resourceKindLabels.local,
+          icon: <Icon name="folder" size={14} />,
+          onSelect: () => setDrawer({ mode: "add", kind: "local" }),
+        },
+        {
+          label: resourceKindLabels.smb,
+          icon: <Icon name="hard-drive" size={14} />,
+          onSelect: () => setDrawer({ mode: "add", kind: "smb" }),
+        },
       ]}
     />
   );

@@ -158,6 +158,20 @@ test("sign-in shows an Alert for a wrong password, then lands the admin on the a
   await screenshot(page, "second-factor-recovery-codes");
   await proceed.click();
 
+  await expect(page).toHaveURL("/admin/dashboard");
+  await expectLayout(page, "admin", "Dashboard");
+  await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Dashboard" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  for (const card of ["Users", "Invitations", "Resources", "Share links"]) {
+    await expect(page.getByRole("region", { name: card })).toBeVisible();
+  }
+  const recentActivity = page.getByRole("region", { name: "Recent activity" });
+  await expect(recentActivity.getByRole("listitem").filter({ hasText: "Authenticator app added" })).toHaveCount(1);
+  await screenshot(page, "admin-dashboard");
+
+  await recentActivity.getByRole("link", { name: "View audit log" }).click();
   await expect(page).toHaveURL("/admin/audit-log");
   await expectLayout(page, "admin", "Audit log");
   await expect(page.getByText(/Times are in /)).toBeVisible();
@@ -199,7 +213,7 @@ test("sign-in follows a safe ?next= and refuses an unsafe one", async ({ page })
   const problems = await watchViolations(page);
 
   await signInAsAdmin(page, `/sign-in?next=${encodeURIComponent("//evil.example/admin")}`);
-  await expect(page).toHaveURL("/admin/audit-log");
+  await expect(page).toHaveURL("/admin/dashboard");
 
   await page.context().clearCookies();
   await signInAsAdmin(page, `/sign-in?next=${encodeURIComponent("/settings/sessions")}`);
@@ -211,7 +225,8 @@ test("the theme switch shows the admin interface dark and remembers it on every 
   const problems = await watchViolations(page);
   await page.context().addCookies([sessionCookie(baseURL ?? "", seedAdminSession())]);
   await page.goto("/");
-  await expect(page).toHaveURL("/admin/audit-log");
+  await expect(page).toHaveURL("/admin/dashboard");
+  await expect(page.getByRole("heading", { level: 1, name: "Dashboard" })).toBeVisible();
 
   await page.getByRole("button", { name: "Switch to dark theme" }).click();
 

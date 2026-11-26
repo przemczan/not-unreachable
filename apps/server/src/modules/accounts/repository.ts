@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, type SQL } from "drizzle-orm";
+import { and, asc, eq, isNull, sql, type SQL } from "drizzle-orm";
 import type { Db } from "../platform/index.ts";
 import { passwordCredentials, setupTokens, users, type SetupTokenRow, type UserRow } from "./schema.ts";
 
@@ -14,6 +14,8 @@ export interface AccountsRepository {
   findAdmin(): UserRow | undefined;
   /** Role `user` only, oldest first. */
   listUsers(): UserRow[];
+  /** The accounts of role `user` by status, in one aggregate query. */
+  countUsers(): { readonly active: number; readonly disabled: number };
   insertUser(row: UserRow): void;
   updateUser(id: string, change: UserChange): void;
   /** Answers whether there was one. */
@@ -43,6 +45,17 @@ export function createAccountsRepository(db: Db): AccountsRepository {
     findUserByEmail: (email) => findUser(eq(users.email, email)),
     findAdmin: () => findUser(eq(users.role, "admin")),
     listUsers: () => db.select().from(users).where(eq(users.role, "user")).orderBy(asc(users.createdAt), asc(users.id)).all(),
+    countUsers() {
+      const counts = db
+        .select({
+          active: sql<number>`count(*) filter (where ${eq(users.status, "active")})`.mapWith(Number),
+          disabled: sql<number>`count(*) filter (where ${eq(users.status, "disabled")})`.mapWith(Number),
+        })
+        .from(users)
+        .where(eq(users.role, "user"))
+        .get();
+      return { active: counts?.active ?? 0, disabled: counts?.disabled ?? 0 };
+    },
     insertUser(row) {
       db.insert(users).values(row).run();
     },

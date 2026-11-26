@@ -78,7 +78,7 @@ async function createLink(page: Page, dialog: ReturnType<Page["getByRole"]>): Pr
 
 test("the admin shares a file with a password, and someone else unlocks and downloads it", async ({ page, browser }) => {
   await signInAsAdmin(page);
-  await expect(page).toHaveURL("/admin/audit-log");
+  await expect(page).toHaveURL("/admin/dashboard");
   await addResource(page);
 
   const dialog = await openShareDialog(page, "report.txt");
@@ -133,7 +133,7 @@ test("the admin shares a file with a password, and someone else unlocks and down
 
 test("someone browses a folder link and downloads a file inside it", async ({ page, browser }) => {
   await signInAsAdmin(page);
-  await expect(page).toHaveURL("/admin/audit-log");
+  await expect(page).toHaveURL("/admin/dashboard");
   const dialog = await openShareDialog(page, "Album");
   const link = await createLink(page, dialog);
 
@@ -164,7 +164,7 @@ test("a link for selected users opens only for them: others are asked to sign in
   const picked = seedUserWithSession(`pia-${suffix}`);
   const other = seedUserWithSession(`otto-${suffix}`);
   await signInAsAdmin(page);
-  await expect(page).toHaveURL("/admin/audit-log");
+  await expect(page).toHaveURL("/admin/dashboard");
 
   const dialog = await openShareDialog(page, "report.txt");
   await dialog.getByRole("radio", { name: "Selected users" }).check();

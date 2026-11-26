@@ -18,18 +18,36 @@ test.describe.configure({ mode: "serial" });
 const MIB = 1024 * 1024;
 const suffix = randomBytes(3).toString("hex");
 const resourceName = `Files ${suffix}`;
+const otherResourceName = `Archive ${suffix}`;
 const username = `fred-${suffix}`;
 
 let folder = "";
+let otherFolder = "";
 let resourceId = "";
 
 test.beforeAll(() => {
   folder = mkdtempSync(join(tmpdir(), "nu-e2e-files-"));
+  otherFolder = mkdtempSync(join(tmpdir(), "nu-e2e-files-other-"));
 });
 
 test.afterAll(() => {
-  if (folder !== "") rmSync(folder, { recursive: true, force: true });
+  for (const path of [folder, otherFolder]) if (path !== "") rmSync(path, { recursive: true, force: true });
 });
+
+/** Adds the local folder `path` as a resource named `name`, on the Resources page. */
+async function addFolder(page: Page, name: string, path: string): Promise<void> {
+  await page.goto("/admin/resources");
+  await page.getByRole("button", { name: "Add resource" }).first().click();
+  await page.getByRole("menuitem", { name: "Local folder" }).click();
+  const drawer = page.getByRole("dialog", { name: "Add folder" });
+  await drawer.getByLabel("Name").fill(name);
+  await drawer.getByLabel("Folder path").fill(path);
+  await drawer.getByRole("button", { name: "Check folder" }).click();
+  await expect(drawer.getByText("The service can use this folder")).toBeVisible();
+  await drawer.getByRole("button", { name: "Add folder" }).click();
+  await expect(page.getByText("Folder added")).toBeVisible();
+  await expect(drawer).toBeHidden();
+}
 
 /**
  * Holds the second PATCH (the second chunk) of the next upload until `release`, so a test can
@@ -118,17 +136,9 @@ test("the admin uploads with pause and resume, downloads and deletes in a resour
   page.on("pageerror", (error) => errors.push(error.message));
 
   await signInAsAdmin(page);
-  await expect(page).toHaveURL("/admin/audit-log");
-  await page.goto("/admin/resources");
-  await page.getByRole("button", { name: "Add resource" }).first().click();
-  await page.getByRole("menuitem", { name: "Local folder" }).click();
-  const drawer = page.getByRole("dialog", { name: "Add folder" });
-  await drawer.getByLabel("Name").fill(resourceName);
-  await drawer.getByLabel("Folder path").fill(folder);
-  await drawer.getByRole("button", { name: "Check folder" }).click();
-  await expect(drawer.getByText("The service can use this folder")).toBeVisible();
-  await drawer.getByRole("button", { name: "Add folder" }).click();
-  await expect(page.getByText("Folder added")).toBeVisible();
+  await expect(page).toHaveURL("/admin/dashboard");
+  await expect(page.getByRole("heading", { level: 1, name: "Dashboard" })).toBeVisible();
+  await addFolder(page, resourceName, folder);
   resourceId = resourceIdOf(resourceName);
 
   await page.goto(`/admin/files/${resourceId}`);
@@ -187,6 +197,22 @@ test("the admin uploads with pause and resume, downloads and deletes in a resour
     await createAndDelete(page, resourceName, "Old reports", "notes.txt");
     expect(existsSync(join(folder, "notes.txt"))).toBe(false);
     expect(existsSync(join(folder, "Old reports"))).toBe(false);
+  });
+
+  await test.step("switches to another resource with the Resource picker", async () => {
+    await addFolder(page, otherResourceName, otherFolder);
+    const otherId = resourceIdOf(otherResourceName);
+    await page.goto(`/admin/files/${resourceId}`);
+    await expect(page.getByRole("table", { name: resourceName })).toBeVisible();
+
+    await page.getByRole("combobox", { name: "Resource" }).click();
+    await screenshot(page, "admin-files-resource-picker");
+    await page.getByRole("option", { name: new RegExp(`^${otherResourceName}`) }).click();
+
+    await expect(page).toHaveURL(`/admin/files/${otherId}`);
+    await expect(page.getByRole("table", { name: otherResourceName })).toBeVisible();
+    await expect(page.getByText("No files yet")).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Resource" })).toContainText(otherResourceName);
   });
 
   expect(errors).toEqual([]);

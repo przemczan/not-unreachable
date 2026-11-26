@@ -198,7 +198,15 @@ WantedBy=multi-user.target
   `resources.conf` atomically (temporary file, `fsync`, rename) with every
   folder it already listed plus the new one, so running it twice changes
   nothing. Then it runs `systemctl daemon-reload` and `systemctl restart
-  not-unreachable.service`. For a folder under `/home`, `/root` or
+  not-unreachable.service`. The drop-in only lifts the sandbox, so last it
+  checks the folder as the service user: `runuser -u not-unreachable -- test
+  -r|-w|-x <path>`, after `runuser … -- true` to tell a missing runuser or user
+  from a no. runuser sets up the user's supplementary groups, so group and ACL
+  access count and the kernel checks the parent folders (`spawn` with a `uid`
+  would drop the groups). If the user lacks read, write or enter, it warns on
+  stderr which, with a `setfacl` or `chown` command to copy; if it couldn't
+  check, it says so and how to check by hand. Either way the folder stays
+  allowed and it exits 0. For a folder under `/home`, `/root` or
   `/run/user`, the drop-in also gets `ProtectHome=tmpfs` and a `BindPaths=`
   line for it:
 

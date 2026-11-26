@@ -63,7 +63,9 @@ export function PasswordSettings() {
       )}
       <Card title="Password" subtitle="Changing it signs out every other session." padding="none" bodyClassName="px-5">
         <SettingsRow label="Current password" htmlFor={`${id}-current`}>
-          <PasswordInput autoComplete="current-password" {...field("current")} />
+          {/* Not "current-password": a signed-in user types it to prove it's them, so it's never autofilled.
+              Not "new-password" either, which makes browsers offer to generate one here. */}
+          <PasswordInput autoComplete="off" {...field("current")} />
         </SettingsRow>
         <SettingsRow label="New password" htmlFor={`${id}-password`}>
           <PasswordInput autoComplete="new-password" hint={newPasswordHint} {...field("password")} />

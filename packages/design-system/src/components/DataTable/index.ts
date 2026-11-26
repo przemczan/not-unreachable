@@ -1,1 +1,1 @@
-export { DataTable, type DataTableColumn, type DataTableProps } from "./DataTable.tsx";
+export { DataTable, type DataTableColumn, type DataTableProps, type DataTableSort } from "./DataTable.tsx";

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { entriesPageSchema, entrySchema, problemTypes, routes } from "@not-unreachable/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -85,6 +85,98 @@ describe("browsing", () => {
     );
     expectProblem(await asUser(routes.listResourceEntries, { params: files.resourceId }), 403, problemTypes.forbidden);
     expectProblem(await callFilesRoute(files.test, routes.listHomeEntries), 401, problemTypes.signInRequired);
+  });
+});
+
+const listHome = async (query: Record<string, string>) => {
+  const response = await asUser(routes.listHomeEntries, { query });
+  expect(response.statusCode).toBe(200);
+  return entriesPageSchema.parse(response.json());
+};
+
+/** Every page of the home, `limit` at a time, by the cursors; the names in the order listed. */
+const pagedNames = async (query: Record<string, string>, limit: number) => {
+  const names: string[] = [];
+  let cursor: string | null = null;
+  do {
+    const page = await listHome({ ...query, limit: String(limit), ...(cursor === null ? {} : { cursor }) });
+    names.push(...page.entries.map((entry) => entry.name));
+    cursor = page.nextCursor;
+  } while (cursor !== null);
+  return names;
+};
+
+const day = (date: number) => new Date(`2026-01-0${date}T12:00:00.000Z`);
+
+describe("sorting", () => {
+  beforeEach(() => {
+    // [name, size, modified on 2026-01-0N]; c.txt and d.txt tie on both, so their name decides.
+    const contents: [string, number, number][] = [
+      ["a.txt", 3, 1],
+      ["b.txt", 1, 3],
+      ["c.txt", 2, 2],
+      ["d.txt", 2, 2],
+    ];
+    for (const [name, size, date] of contents) {
+      writeFileSync(join(files.homeDir, name), "x".repeat(size));
+      utimesSync(join(files.homeDir, name), day(date), day(date));
+    }
+    for (const [name, date] of [
+      ["x-dir", 5],
+      ["y-dir", 1],
+    ] as const) {
+      mkdirSync(join(files.homeDir, name));
+      utimesSync(join(files.homeDir, name), day(date), day(date));
+    }
+  });
+
+  it.each<[string, string, string[]]>([
+    ["name", "asc", ["x-dir", "y-dir", "a.txt", "b.txt", "c.txt", "d.txt"]],
+    ["name", "desc", ["y-dir", "x-dir", "d.txt", "c.txt", "b.txt", "a.txt"]],
+    // Folders have size 0, so by size they go by name.
+    ["size", "asc", ["x-dir", "y-dir", "b.txt", "c.txt", "d.txt", "a.txt"]],
+    ["size", "desc", ["y-dir", "x-dir", "a.txt", "d.txt", "c.txt", "b.txt"]],
+    ["modified", "asc", ["y-dir", "x-dir", "a.txt", "c.txt", "d.txt", "b.txt"]],
+    ["modified", "desc", ["x-dir", "y-dir", "b.txt", "d.txt", "c.txt", "a.txt"]],
+  ])("lists by %s %s, folders first, and pages the same way", async (sort, order, expected) => {
+    const page = await listHome({ sort, order });
+    expect(page.entries.map((entry) => entry.name)).toEqual(expected);
+    expect(page.nextCursor).toBeNull();
+    expect(await pagedNames({ sort, order }, 2)).toEqual(expected);
+    expect(await pagedNames({ sort, order }, 1)).toEqual(expected);
+  });
+
+  it("sorts by name ascending by default", async () => {
+    expect((await listHome({})).entries.map((entry) => entry.name)).toEqual(["x-dir", "y-dir", "a.txt", "b.txt", "c.txt", "d.txt"]);
+  });
+
+  it("refuses a cursor made for another sort or order", async () => {
+    const { nextCursor } = await listHome({ sort: "size", order: "desc", limit: "2" });
+    expect(nextCursor).not.toBeNull();
+    const cursor = nextCursor ?? "";
+    for (const query of [{}, { sort: "name", order: "desc" }, { sort: "modified", order: "desc" }, { sort: "size", order: "asc" }]) {
+      expectProblem(await asUser(routes.listHomeEntries, { query: { ...query, cursor } }), 400, problemTypes.badRequest);
+    }
+    expect((await asUser(routes.listHomeEntries, { query: { sort: "size", order: "desc", cursor } })).statusCode).toBe(200);
+    expectProblem(await asUser(routes.listHomeEntries, { query: { sort: "date" } }), 400, problemTypes.validationFailed);
+  });
+
+  it("keeps the cursor of the longest name within the limit, whatever it holds", async () => {
+    const longest = '"\\'.repeat(127) + '"';
+    writeFileSync(join(files.homeDir, longest), "");
+    utimesSync(join(files.homeDir, longest), day(9), day(9));
+    const { entries, nextCursor } = await listHome({ sort: "modified", order: "desc", limit: "3" });
+    expect(entries.at(-1)?.name).toBe(longest);
+    expect(nextCursor?.length).toBeLessThanOrEqual(400);
+    expect(await pagedNames({ sort: "modified", order: "desc" }, 3)).toEqual([
+      "x-dir",
+      "y-dir",
+      longest,
+      "b.txt",
+      "d.txt",
+      "c.txt",
+      "a.txt",
+    ]);
   });
 });
 

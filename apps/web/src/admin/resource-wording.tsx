@@ -182,6 +182,7 @@ export function ResourceCheckAlert({ result, onAllowFolder }: ResourceCheckAlert
               if (outcome === "copied") toast.show({ tone: "success", title: "Command copied" });
             }}
           />
+          <p className="m-0">If the command doesn't help, the not-unreachable user needs write permission on the folder.</p>
         </div>
       </Alert>
     );

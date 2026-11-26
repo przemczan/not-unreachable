@@ -1,5 +1,5 @@
-import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { DataTable, type DataTableColumn } from "./DataTable.tsx";
 
 interface Session {
@@ -82,5 +82,53 @@ describe("DataTable", () => {
   it("says No results by default", () => {
     render(<DataTable columns={columns} />);
     expect(screen.getByRole("cell", { name: "No results" })).toBeTruthy();
+  });
+
+  describe("sorting", () => {
+    const sortable: DataTableColumn<Session>[] = [
+      { key: "device", header: "Device", sortable: true },
+      { key: "ip", header: "IP address" },
+      { key: "requests", header: "Requests", align: "right", sortable: true },
+    ];
+
+    it("makes sortable headers buttons, and leaves the others text", () => {
+      render(<DataTable columns={sortable} rows={rows} />);
+      const device = screen.getByRole("columnheader", { name: "Device" });
+      expect(within(device).getByRole("button", { name: "Device" }).getAttribute("type")).toBe("button");
+      expect(within(screen.getByRole("columnheader", { name: "IP address" })).queryByRole("button")).toBeNull();
+    });
+
+    it("sets aria-sort on the sorted column only, and shows its direction with an arrow", () => {
+      const { rerender } = render(<DataTable columns={sortable} rows={rows} sort={{ key: "requests", order: "desc" }} />);
+      const requests = screen.getByRole("columnheader", { name: "Requests" });
+      const device = screen.getByRole("columnheader", { name: "Device" });
+      expect(requests.getAttribute("aria-sort")).toBe("descending");
+      expect(device.hasAttribute("aria-sort")).toBe(false);
+      expect(screen.getByRole("columnheader", { name: "IP address" }).hasAttribute("aria-sort")).toBe(false);
+      expect(requests.querySelector("svg")?.classList).toContain("rotate-180");
+      expect(device.querySelector("svg")).toBeNull();
+
+      rerender(<DataTable columns={sortable} rows={rows} sort={{ key: "device", order: "asc" }} />);
+      expect(device.getAttribute("aria-sort")).toBe("ascending");
+      expect(device.querySelector("svg")?.classList).not.toContain("rotate-180");
+      expect(requests.hasAttribute("aria-sort")).toBe(false);
+      expect(requests.querySelector("svg")).toBeNull();
+    });
+
+    it("calls onSortChange with the clicked column's key, and leaves the sort to the caller", () => {
+      const onSortChange = vi.fn<(key: string) => void>();
+      render(<DataTable columns={sortable} rows={rows} sort={{ key: "device", order: "asc" }} onSortChange={onSortChange} />);
+      fireEvent.click(screen.getByRole("button", { name: "Requests" }));
+      fireEvent.click(screen.getByRole("button", { name: "Device" }));
+      expect(onSortChange.mock.calls).toEqual([["requests"], ["device"]]);
+      expect(screen.getByRole("columnheader", { name: "Device" }).getAttribute("aria-sort")).toBe("ascending");
+    });
+  });
+
+  it("highlights rows on hover only when asked", () => {
+    const { rerender } = render(<DataTable columns={columns} rows={rows} />);
+    expect(screen.getAllByRole("row")[1]!.classList).not.toContain("hover:bg-surface-hover");
+    rerender(<DataTable columns={columns} rows={rows} highlightRowOnHover />);
+    expect(screen.getAllByRole("row")[1]!.classList).toContain("hover:bg-surface-hover");
   });
 });

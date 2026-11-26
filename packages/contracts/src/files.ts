@@ -35,9 +35,18 @@ export const entrySchema = z.strictObject({
 });
 export type Entry = z.infer<typeof entrySchema>;
 
+/** What a listing can be sorted by: the entry's name, its size, or when it was last modified. */
+export const entrySortKeys = ["name", "size", "modified"] as const;
+export type EntrySortKey = (typeof entrySortKeys)[number];
+
+export const sortOrders = ["asc", "desc"] as const;
+export type SortOrder = (typeof sortOrders)[number];
+
 export const entriesQuerySchema = z.strictObject({
   path: entryPathSchema.default(""),
-  /** Opaque; from the previous page's `nextCursor`. */
+  sort: z.enum(entrySortKeys).default("name"),
+  order: z.enum(sortOrders).default("asc"),
+  /** Opaque; from the previous page's `nextCursor`, listed with the same `sort` and `order`. */
   cursor: z.string().min(1).max(400).optional(),
   limit: z.coerce.number().int().min(1).max(ENTRIES_PAGE_LIMIT_MAX).default(ENTRIES_PAGE_LIMIT_MAX),
 });
@@ -46,7 +55,10 @@ export type EntriesQuery = z.input<typeof entriesQuerySchema>;
 export const entriesPageSchema = z.strictObject({
   /** The folder listed, as the server normalised it (NFC, no leading or trailing `/`). */
   path: z.string(),
-  /** Folders first, then the rest, each by name. */
+  /**
+   * Folders first, whatever the order, then the rest; each group by the query's `sort` in its
+   * `order`, ties broken by name in the same order. Folders have size 0, so by size they go by name.
+   */
   entries: z.array(entrySchema),
   nextCursor: z.string().nullable(),
 });

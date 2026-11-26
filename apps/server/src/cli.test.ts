@@ -106,6 +106,8 @@ describe("not-unreachable CLI", () => {
     let dropInDir: string;
     let systemctlLog: string;
     let systemd: NonNullable<CliIo["systemd"]>;
+    let runuserLog: string;
+    let runuserScript: string;
 
     beforeEach(() => {
       dropInDir = join(temp.dir, "etc", "not-unreachable.service.d");
@@ -116,9 +118,37 @@ describe("not-unreachable CLI", () => {
         'import { appendFileSync } from "node:fs";\nappendFileSync(process.argv[2], JSON.stringify(process.argv.slice(3)) + "\\n");\n',
       );
       systemd = { dropInDir, systemctl: { command: process.execPath, args: [script, systemctlLog] } };
+      runuserLog = join(temp.dir, "runuser.log");
+      runuserScript = join(temp.dir, "fake-runuser.mjs");
+      // Logs its arguments; then fails as runuser does for an unknown user, or answers `test` false for
+      // the flags it is told the user lacks.
+      writeFileSync(
+        runuserScript,
+        [
+          'import { appendFileSync } from "node:fs";',
+          "const [log, lacks, ...args] = process.argv.slice(2);",
+          'appendFileSync(log, JSON.stringify(args) + "\\n");',
+          'const command = args.slice(args.indexOf("--") + 1);',
+          'if (lacks === "no-user") { process.stderr.write("runuser: user not-unreachable does not exist\\n"); process.exit(1); }',
+          'if (command[0] === "true") process.exit(0);',
+          "process.exit(lacks.includes(command[1].slice(1)) ? 1 : 0);",
+          "",
+        ].join("\n"),
+      );
     });
 
-    const allow = (args: string[], extra: Partial<CliIo> = {}) => run(["allow-folder", ...args], { isRoot: true, systemd, ...extra });
+    /** A runuser as whom the service user lacks these of `rwx`, or doesn't exist. */
+    const runuser = (lacks: string): NonNullable<CliIo["runuser"]> => ({
+      command: process.execPath,
+      args: [runuserScript, runuserLog, lacks],
+    });
+    const allow = (args: string[], extra: Partial<CliIo> = {}) =>
+      run(["allow-folder", ...args], { isRoot: true, systemd, runuser: runuser(""), ...extra });
+    const runuserCalls = (): unknown[] =>
+      readFileSync(runuserLog, "utf8")
+        .split("\n")
+        .filter((line) => line !== "")
+        .map((line): unknown => JSON.parse(line));
     const dropIn = (): string => readFileSync(join(dropInDir, "resources.conf"), "utf8");
     const systemctlCalls = (): unknown[] =>
       existsSync(systemctlLog)
@@ -146,6 +176,57 @@ describe("not-unreachable CLI", () => {
           `ReadWritePaths="${files}"\n`,
       );
       expect(systemctlCalls()).toEqual([["daemon-reload"], ["restart", "not-unreachable.service"]]);
+      expect(runuserCalls()).toEqual([
+        ["-u", "not-unreachable", "--", "true"],
+        ["-u", "not-unreachable", "--", "test", "-r", files],
+        ["-u", "not-unreachable", "--", "test", "-w", files],
+        ["-u", "not-unreachable", "--", "test", "-x", files],
+      ]);
+    });
+
+    it("still allows the folder when the service user lacks permission on it, and warns what it lacks", async () => {
+      const files = folder("my files");
+      const result = await allow([files], { runuser: runuser("wx") });
+      expect(result).toEqual({
+        code: 0,
+        stdout:
+          `Added ${files} to ${join(dropInDir, "resources.conf")}.\n` +
+          `Reloaded systemd and restarted not-unreachable.service: its sandbox no longer keeps the service from writing to ${files}.\n`,
+        stderr:
+          `allow-folder: warning: the service's user not-unreachable lacks write (w) and enter (x) permission on ${files},\n` +
+          "so the service still can't write to it. Give the user access, such as with an ACL:\n" +
+          `  sudo setfacl -m u:not-unreachable:rwx '${files}'\n` +
+          "or by making not-unreachable the folder's owner (or giving its group rwx and adding not-unreachable to it):\n" +
+          `  sudo chown not-unreachable '${files}'\n` +
+          "Every folder above it needs enter (x) permission for not-unreachable too. Then run allow-folder again to check.\n",
+      });
+      expect(dropIn()).toContain(`ReadWritePaths="${files}"\n`);
+      expect(systemctlCalls()).toEqual([["daemon-reload"], ["restart", "not-unreachable.service"]]);
+
+      const unreadable = await allow([files], { runuser: runuser("rwx") });
+      expect(unreadable).toMatchObject({ code: 0, stderr: expect.stringContaining("lacks read (r), write (w) and enter (x) permission") });
+    });
+
+    it("still allows the folder when it can't check the service user's access, and says how to check by hand", async () => {
+      const files = folder("files");
+      const result = await allow([files], { runuser: runuser("no-user") });
+      expect(result).toEqual({
+        code: 0,
+        stdout:
+          `Added ${files} to ${join(dropInDir, "resources.conf")}.\n` +
+          `Reloaded systemd and restarted not-unreachable.service: its sandbox no longer keeps the service from writing to ${files}.\n`,
+        stderr:
+          `allow-folder: warning: couldn't check whether the service's user not-unreachable may use ${files} ` +
+          "(runuser: user not-unreachable does not exist).\n" +
+          "Check it by hand; this prints ok when it may read, write and enter the folder:\n" +
+          `  sudo runuser -u not-unreachable -- test -r ${files} -a -w ${files} -a -x ${files} && echo ok\n`,
+      });
+      expect(runuserCalls()).toEqual([["-u", "not-unreachable", "--", "true"]]);
+      expect(systemctlCalls()).toEqual([["daemon-reload"], ["restart", "not-unreachable.service"]]);
+
+      const missing = await allow([files], { runuser: { command: join(temp.dir, "no-runuser") } });
+      expect(missing).toMatchObject({ code: 0, stderr: expect.stringContaining("couldn't check whether") });
+      expect(missing.stdout).not.toContain("the service can now write to");
     });
 
     it("is idempotent: the same folder again leaves the drop-in as it was", async () => {

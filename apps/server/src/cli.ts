@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { execFile } from "node:child_process";
 import { createInterface } from "node:readline";
 import type { FolderRefusal } from "@not-unreachable/contracts";
 import { parseArgs } from "node:util";
@@ -27,6 +28,7 @@ import {
   forbiddenRootsOf,
   runSystemctl,
   SERVICE_UNIT,
+  shellQuote,
   UnsupportedFolderPathError,
   type SystemctlProgram,
 } from "./modules/resources/index.ts";
@@ -58,6 +60,8 @@ export interface CliIo {
   readonly isRoot?: boolean;
   /** Tests only: where `allow-folder` writes its drop-in and the systemctl it runs. */
   readonly systemd?: { readonly dropInDir?: string; readonly systemctl?: SystemctlProgram };
+  /** Tests only: the runuser `allow-folder` checks the service user's access with, given as systemctl is. */
+  readonly runuser?: SystemctlProgram;
 }
 
 const USAGE = `Usage: not-unreachable <command> [options]
@@ -78,7 +82,8 @@ Commands:
                               unless --yes.
   allow-folder <path>         Let the service write to a local folder (run as root): add it to the
                               systemd drop-in ${DEFAULT_DROP_IN_DIR}/resources.conf,
-                              then reload systemd and restart the service.
+                              then reload systemd, restart the service and check that the
+                              service's user may read, write and enter the folder.
 `;
 
 interface Context {
@@ -295,8 +300,104 @@ async function allowFolder(context: Context, path: string): Promise<number> {
   const systemctl = io.systemd?.systemctl ?? { command: "systemctl" };
   await runSystemctl(systemctl, ["daemon-reload"]);
   await runSystemctl(systemctl, ["restart", SERVICE_UNIT]);
-  io.stdout.write(`Reloaded systemd and restarted ${SERVICE_UNIT}: the service can now write to ${checked.realPath}.\n`);
+  const access = await checkServiceUserAccess(io.runuser ?? { command: "runuser" }, checked.realPath);
+  const canWrite = access.checked && access.missing.length === 0;
+  io.stdout.write(
+    `Reloaded systemd and restarted ${SERVICE_UNIT}: ` +
+      (canWrite
+        ? `the service can now write to ${checked.realPath}.\n`
+        : `its sandbox no longer keeps the service from writing to ${checked.realPath}.\n`),
+  );
+  if (!access.checked) io.stderr.write(uncheckedAccessWarning(checked.realPath, access.reason));
+  else if (!canWrite) io.stderr.write(missingAccessWarning(checked.realPath, access.missing));
   return 0;
+}
+
+/** The service's own user, as the CLI wrapper and the installer name it (`SERVICE_USER`). */
+const SERVICE_USER = "not-unreachable";
+
+/** What the service needs on an allowed folder: `test`'s flag for it and its name in a warning. */
+const folderAccess = [
+  { flag: "-r", name: "read (r)" },
+  { flag: "-w", name: "write (w)" },
+  { flag: "-x", name: "enter (x)" },
+] as const;
+
+/** Whether the service user may use a folder: what it lacks, or why that couldn't be checked. */
+type ServiceUserAccess =
+  { readonly checked: true; readonly missing: readonly string[] } | { readonly checked: false; readonly reason: string };
+
+/**
+ * Lifting the sandbox is not enough: the service user needs Unix permission on the folder too.
+ * A probe that runs `true` first tells a missing runuser or user apart from `test` answering no,
+ * since both runuser's failures and a false `test` exit 1.
+ */
+async function checkServiceUserAccess(runuser: SystemctlProgram, path: string): Promise<ServiceUserAccess> {
+  const probe = await runAsServiceUser(runuser, ["true"]);
+  if (!("exitCode" in probe) || probe.exitCode !== 0) return { checked: false, reason: runFailure(probe, "runuser") };
+  const missing: string[] = [];
+  for (const access of folderAccess) {
+    const result = await runAsServiceUser(runuser, ["test", access.flag, path]);
+    if ("exitCode" in result && result.exitCode === 0) continue;
+    if ("exitCode" in result && result.exitCode === 1) missing.push(access.name);
+    else return { checked: false, reason: runFailure(result, `test ${access.flag}`) };
+  }
+  return { checked: true, missing };
+}
+
+/** How a run as the service user ended: its exit code, or why it didn't run to one. */
+type RunOutcome = { readonly exitCode: number; readonly stderr: string } | { readonly failure: string };
+
+const RUNUSER_TIMEOUT_MS = 10_000;
+
+/**
+ * Runs a command as the service user, without a shell. runuser sets up its supplementary groups, so
+ * group and ACL access count as they do for the service; `spawn` with a `uid` would drop them and
+ * warn wrongly.
+ */
+function runAsServiceUser(runuser: SystemctlProgram, command: readonly string[]): Promise<RunOutcome> {
+  const args = [...(runuser.args ?? []), "-u", SERVICE_USER, "--", ...command];
+  return new Promise((resolve) => {
+    execFile(runuser.command, args, { timeout: RUNUSER_TIMEOUT_MS }, (error, _stdout, stderr) => {
+      if (error === null) resolve({ exitCode: 0, stderr });
+      else if (typeof error.code === "number") resolve({ exitCode: error.code, stderr });
+      else resolve({ failure: error.message });
+    });
+  });
+}
+
+function runFailure(outcome: RunOutcome, what: string): string {
+  if ("failure" in outcome) return outcome.failure;
+  const firstLine = outcome.stderr.trim().split("\n")[0] ?? "";
+  return firstLine === "" ? `${what} exited with ${outcome.exitCode}` : firstLine;
+}
+
+/** "a", "a and b", "a, b and c". */
+function listed(items: readonly string[]): string {
+  return items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items.at(-1) ?? ""}`;
+}
+
+function missingAccessWarning(path: string, missing: readonly string[]): string {
+  const quoted = shellQuote(path);
+  return [
+    `allow-folder: warning: the service's user ${SERVICE_USER} lacks ${listed(missing)} permission on ${path},`,
+    "so the service still can't write to it. Give the user access, such as with an ACL:",
+    `  sudo setfacl -m u:${SERVICE_USER}:rwx ${quoted}`,
+    `or by making ${SERVICE_USER} the folder's owner (or giving its group rwx and adding ${SERVICE_USER} to it):`,
+    `  sudo chown ${SERVICE_USER} ${quoted}`,
+    `Every folder above it needs enter (x) permission for ${SERVICE_USER} too. Then run allow-folder again to check.`,
+    "",
+  ].join("\n");
+}
+
+function uncheckedAccessWarning(path: string, reason: string): string {
+  const quoted = shellQuote(path);
+  return [
+    `allow-folder: warning: couldn't check whether the service's user ${SERVICE_USER} may use ${path} (${reason}).`,
+    "Check it by hand; this prints ok when it may read, write and enter the folder:",
+    `  sudo runuser -u ${SERVICE_USER} -- test -r ${quoted} -a -w ${quoted} -a -x ${quoted} && echo ok`,
+    "",
+  ].join("\n");
 }
 
 function prepare(context: Context): PreparedDatabase {

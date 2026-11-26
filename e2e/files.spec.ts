@@ -150,6 +150,16 @@ test("the admin uploads with pause and resume, downloads and deletes in a resour
     expect(readFileSync(join(folder, big.name)).equals(big.buffer)).toBe(true);
   });
 
+  await test.step("sorts by a header and highlights the hovered row", async () => {
+    const table = page.getByRole("table", { name: resourceName });
+    await table.getByRole("button", { name: "Size" }).click();
+    await expect(table.getByRole("columnheader", { name: "Size" })).toHaveAttribute("aria-sort", "descending");
+    await table.getByRole("row", { name: new RegExp(big.name) }).hover();
+    await screenshot(page, "admin-files-sorted-by-size-row-hovered");
+    await table.getByRole("button", { name: "Name" }).click();
+    await expect(table.getByRole("columnheader", { name: "Name" })).toHaveAttribute("aria-sort", "ascending");
+  });
+
   await test.step("downloads the file, whole and a range of it", async () => {
     await screenshot(page, "admin-files-row-buttons");
     await expectDownload(page, resourceName, big.name, big.buffer);

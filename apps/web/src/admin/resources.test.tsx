@@ -230,6 +230,9 @@ describe("resources", () => {
 
     expect(await within(drawer).findByText("The service can't write to this folder")).toBeDefined();
     expect(within(drawer).getByText("Run this command on the server, then check the folder again.")).toBeDefined();
+    expect(
+      within(drawer).getByText("If the command doesn't help, the not-unreachable user needs write permission on the folder."),
+    ).toBeDefined();
     expect(within(drawer).queryByRole("button", { name: "Allow this folder" })).toBeNull();
     const field = within(drawer).getByRole("group", { name: "Command" });
     expect(field.querySelector("code")?.textContent).toBe(command);

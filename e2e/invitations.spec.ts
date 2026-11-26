@@ -58,6 +58,9 @@ test("the admin invites someone, who creates their account with a provider and l
   await page.getByRole("button", { name: "Invite user" }).first().click();
   const invite = page.getByRole("dialog", { name: "Invite user" });
   await expect(invite).toBeVisible();
+  await expect(invite.getByRole("checkbox", { name: /Send the invitation to this email/ })).toBeDisabled();
+  await expect(invite.getByRole("link", { name: "Email tab of Settings" })).toHaveAttribute("href", "/admin/settings/email");
+  await screenshot(page, "admin-invite-user-email-not-set-up");
   await invite.getByRole("button", { name: "Create invitation" }).click();
   const created = page.getByRole("dialog", { name: "Invitation created" });
   await expect(created).toBeVisible();

@@ -226,10 +226,15 @@ describe("Admin → Users → Invitations", () => {
     const verify = within(dialog).getByRole<HTMLInputElement>("checkbox", { name: /Require a verified matching email/ });
     expect(send.disabled).toBe(true);
     expect(verify.disabled).toBe(true);
+    // Email not being set up is said before any address is typed, with the Email tab one click away.
+    const emailTab = await within(dialog).findByRole("link", { name: "Email tab of Settings" });
+    expect(emailTab.getAttribute("href")).toBe("/admin/settings/email");
+    expect(emailTab.parentElement?.textContent).toBe("Email isn't set up. Set it up on the Email tab of Settings to send invitations.");
+    expect(within(dialog).queryByText("Enter an email address first.")).toBeNull();
 
     fireEvent.change(within(dialog).getByLabelText(/^Email/), { target: { value: "new@example.com" } });
     expect(send.disabled).toBe(true);
-    expect(within(dialog).getByText("Set up email on the Email tab of Settings first.")).toBeDefined();
+    expect(within(dialog).getByRole("link", { name: "Email tab of Settings" })).toBeDefined();
     expect(verify.disabled).toBe(false);
   });
 

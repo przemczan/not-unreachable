@@ -106,8 +106,11 @@ brings over any rule it has that this file lacks (see [Enforcement](#enforcement
     WAI-ARIA `tablist` with TabPanel. Pagination is cursor-based ("Previous" /
     "Next" and a summary) instead of the source's page numbers. Timeline takes
     `groups` (a heading per day) and an `action` per item. Toast adds
-    ToastProvider and `useToast()`. DataTable has no sorting, selection or
-    loading rows yet, and adds `caption`.
+    ToastProvider and `useToast()`. DataTable adds `caption`, controlled
+    sorting (a `sortable` column's header is a button with the active
+    direction's arrow and `aria-sort`; the caller sorts, through `sort` and
+    `onSortChange`) and opt-in `highlightRowOnHover` (`surface-hover`); it has
+    no selection or loading rows yet.
   - Not ported yet: ProgressBar, Skeleton. The first Task that needs one ports
     it.
 
@@ -379,7 +382,7 @@ summary, for help a form doesn't always need).
 | Sign-in | both | AuthLayout | Input (lg), PasswordInput, Button `accent` lg full width, "or" divider, Button `secondary` per SSO provider and "Sign in with a passkey" (Icon `key-round`), Alert for errors | Login |
 | Second factor | both | AuthLayout | CodeInput, Button, link "Use a recovery code"; when the admin has no factor yet (enrol): QrCodePanel with the setup key in CopyField, CodeInput, the 10 recovery codes in `type-mono` with Copy and "Download codes", Checkbox "I saved them" | Login |
 | First-run setup, invitation, re-link | both | AuthLayout | Field, Input, PasswordInput with hint, QrCodePanel, recovery codes in `type-mono` with CopyField and "Download codes" (setup); invitation: Field and Input for username and display name, Button `secondary` "Continue with <provider>" per SSO provider; re-link: the same provider Buttons, no fields | Login |
-| Files | both | AppShell | PageHeader with actions (Upload files, New folder), Breadcrumbs for the path, DataTable (name with file-type Icon, size `num` right-aligned, modified relative time, row Menu: Download, Share link (admin), Delete), EmptyState, DropZone, Dialog to confirm delete ("Delete 3 files?") | Users |
+| Files | both | AppShell | PageHeader with actions (Upload files, New folder), Breadcrumbs for the path, DataTable (name with file-type Icon, size `num` right-aligned, modified relative time, row Menu: Download, Share link (admin), Delete; sortable by Name, Size or Modified on the server, folders always first, the choice remembered in the browser; the hovered row highlighted), EmptyState, DropZone, Dialog to confirm delete ("Delete 3 files?") | Users |
 | Upload queue | both | AppShell | UploadQueue docked bottom-right, Toast "Upload complete" | – |
 | Create / edit share link | admin | Dialog | Switch "Require a password", PasswordInput, ExpiryPicker, Alert `warning` for "No expiry", CopyField | UserDetail (suspend Dialog) |
 | Share links | admin | AppShell | DataTable (item, Badge expiry, Badge password, Badge `danger` "Locked" while locked after wrong passwords, downloads `num`, created), Tag filters (Active / Expired / Revoked), row Menu (Copy link, Edit, Revoke) | Users |

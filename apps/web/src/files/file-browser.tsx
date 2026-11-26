@@ -26,6 +26,7 @@ import { Link, useNavigate } from "react-router";
 import { formatBytes, formatDateTime, formatRelative, isProblem, problemMessage } from "../lib/index.ts";
 import { ConflictDialog, DeleteEntryDialog, NewFolderDialog } from "./file-dialogs.tsx";
 import { iconOf, joinPath, segmentsOf } from "./paths.ts";
+import { useEntrySort, type EntrySort } from "./sort.ts";
 import type { FileSource } from "./source.ts";
 import type { UploadRecord, UploadStore } from "./upload-store.ts";
 import { useUploads } from "./use-uploads.ts";
@@ -84,6 +85,15 @@ function hasActions(entry: Entry): boolean {
   return entry.kind === "file" || entry.kind === "folder";
 }
 
+function entriesKey(source: FileSource, path: string, sort: EntrySort): readonly unknown[] {
+  return [...source.queryKey, "entries", path, sort.key, sort.order];
+}
+
+/** Whether two listings' keys are of the same folder, whatever their sort. */
+function sameFolder(a: readonly unknown[], b: readonly unknown[]): boolean {
+  return a.length === b.length && a.slice(0, -2).every((part, index) => part === b[index]);
+}
+
 /** A folder's name opens it; a file's is only its name, as Download is its own button. */
 function NameCell({ entry, href }: { readonly entry: Entry; readonly href: string }) {
   const icon = (
@@ -112,8 +122,9 @@ function NameCell({ entry, href }: { readonly entry: Entry; readonly href: strin
 }
 
 /**
- * The file browser of both interfaces: a folder's entries (folders first), Breadcrumbs for the
- * path, upload by button or drop, new folder, download and delete, and the upload queue.
+ * The file browser of both interfaces: a folder's entries (folders first, then by the remembered
+ * sort), Breadcrumbs for the path, upload by button or drop, new folder, download and delete, and
+ * the upload queue.
  */
 export function FileBrowser({
   source,
@@ -135,10 +146,16 @@ export function FileBrowser({
   const [creatingFolder, setCreatingFolder] = useState(false);
   const records = useUploads(uploads);
   const conflict = records.find((record) => record.conflict);
+  const [sort, sortBy] = useEntrySort();
 
+  // The sort is in the key, as a cursor holds only for its own sort: a new one lists from the first page.
+  // Meanwhile the folder stays in its old order, so the header just clicked keeps the focus.
+  const queryKey = entriesKey(source, path, sort);
   const listing = useInfiniteQuery({
-    queryKey: [...source.queryKey, "entries", path],
-    queryFn: ({ pageParam, signal }) => source.list(path, pageParam, signal),
+    queryKey,
+    queryFn: ({ pageParam, signal }) => source.list(path, sort, pageParam, signal),
+    placeholderData: (previous, previousQuery) =>
+      previousQuery !== undefined && sameFolder(previousQuery.queryKey, queryKey) ? previous : undefined,
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });
@@ -223,6 +240,7 @@ export function FileBrowser({
     {
       key: "name",
       header: "Name",
+      sortable: true,
       render: (entry) => <NameCell entry={entry} href={hrefOf(joinPath(path, entry.name))} />,
     },
     {
@@ -231,13 +249,16 @@ export function FileBrowser({
       align: "right",
       width: 120,
       muted: true,
+      sortable: true,
       render: (entry) => (entry.kind === "file" ? formatBytes(entry.size) : "—"),
     },
     {
-      key: "modifiedAt",
+      // Named as the sort it sets, not the entry's field.
+      key: "modified",
       header: "Modified",
       width: 160,
       muted: true,
+      sortable: true,
       render: (entry) => (
         <time dateTime={entry.modifiedAt} title={formatDateTime(entry.modifiedAt)}>
           {formatRelative(entry.modifiedAt)}
@@ -331,6 +352,9 @@ export function FileBrowser({
               columns={columns}
               rows={entries}
               rowKey={(entry) => entry.name}
+              sort={sort}
+              onSortChange={sortBy}
+              highlightRowOnHover
               empty={
                 <EmptyState
                   icon="folder-open"

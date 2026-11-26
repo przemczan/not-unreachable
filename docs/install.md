@@ -363,8 +363,12 @@ SMB shares in the web app, and the service mounts them under
 The service can write only to the local folders it has been allowed. By
 default you allow one on the server with `sudo not-unreachable allow-folder
 <path>`, and **Add resource → Local folder** shows that command when a folder
-isn't allowed yet. You can let the admin do it from the admin interface
-instead. It is off by default, and an upgrade never turns it on.
+isn't allowed yet. `allow-folder` then checks that the `not-unreachable` user
+itself may read, write and enter the folder (as owner, group or by an ACL, with
+enter permission on every folder above it); if not, it still allows the folder
+but warns what is missing and prints a command to fix it, such as `sudo setfacl
+-m u:not-unreachable:rwx <path>`. You can let the admin allow folders from the
+admin interface instead. It is off by default, and an upgrade never turns it on.
 
 Turn it on or off on the server:
 

@@ -51,7 +51,20 @@ function expiryOf(value: string): InvitationExpiryDays {
   return invitationExpiryDays.find((days) => String(days) === value) ?? DEFAULT_INVITATION_EXPIRY_DAYS;
 }
 
-const smtpNotConfiguredMessage = "Set up email on the Email tab of Settings first.";
+const smtpNotConfiguredMessage = "Email isn't set up. Set it up on the Email tab of Settings to send invitations.";
+
+/** {@link smtpNotConfiguredMessage}, with the Email tab as a link. */
+function SmtpNotConfiguredHint(): React.JSX.Element {
+  return (
+    <>
+      Email isn't set up. Set it up on the{" "}
+      <Link to="/admin/settings/email" className="text-link hover:text-link-hover">
+        Email tab of Settings
+      </Link>{" "}
+      to send invitations.
+    </>
+  );
+}
 
 function invitationProblemMessage(error: unknown, fallback: string): string {
   if (isProblem(error, problemTypes.smtpNotConfigured)) return smtpNotConfiguredMessage;
@@ -372,11 +385,13 @@ export function InviteDialog({ onClose }: InviteDialogProps) {
           <Checkbox
             label="Send the invitation to this email"
             description={
-              !hasEmail
-                ? "Enter an email address first."
-                : !smtpReady
-                  ? "Set up email on the Email tab of Settings first."
-                  : "The link is emailed to this address."
+              mail.isPending ? undefined : !smtpReady ? (
+                <SmtpNotConfiguredHint />
+              ) : !hasEmail ? (
+                "Enter an email address first."
+              ) : (
+                "The link is emailed to this address."
+              )
             }
             checked={sending}
             disabled={!hasEmail || !smtpReady}

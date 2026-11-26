@@ -4,8 +4,10 @@ import {
   resourceUploadMetadataSchema,
   type EntriesPage,
   type Entry,
+  type EntrySortKey,
   type Quota,
   type Role,
+  type SortOrder,
   type UploadConflictChoice,
   type UploadLimits,
 } from "@not-unreachable/contracts";
@@ -67,6 +69,8 @@ export interface UploadCaller {
 
 export interface EntriesRequest {
   readonly path: string;
+  readonly sort: EntrySortKey;
+  readonly order: SortOrder;
   readonly cursor?: string | undefined;
   readonly limit: number;
 }
@@ -91,7 +95,10 @@ export interface CleanupResult {
 }
 
 export interface FilesService {
-  /** Folders first, then the rest, each by name; at most `limit`, then a cursor. */
+  /**
+   * Folders first, whatever the order, then the rest; each group by `sort` in `order`, ties broken
+   * by name in the same order; at most `limit`, then a cursor for the same sort and order.
+   */
   list(place: FilesPlace, request: EntriesRequest): Promise<EntriesPage>;
   /** Throws `NameTakenError` when anything holds the name. */
   createFolder(place: FilesPlace, parent: string, name: string): Promise<Entry>;
@@ -140,31 +147,53 @@ export interface FilesServiceDependencies {
   readonly freeSpace?: Partial<FreeSpaceProbes>;
 }
 
-const cursorSchema = z.tuple([z.union([z.literal(0), z.literal(1)]), z.string()]);
+/** Where an entry stands in a listing: folders first (rank 0), then by its sort value, then by name. */
+type Position = readonly [rank: 0 | 1, value: number, name: string];
 
-function rankOf(entry: Entry): 0 | 1 {
-  return entry.kind === "folder" ? 0 : 1;
+/** By name, every entry has the same value, so the name decides. */
+const sortValues: Record<EntrySortKey, (entry: Entry) => number> = {
+  name: () => 0,
+  size: (entry) => entry.size,
+  modified: (entry) => Date.parse(entry.modifiedAt),
+};
+
+function sortValueOf(entry: Entry, sort: EntrySortKey): number {
+  return sortValues[sort](entry);
 }
 
-function compareEntries(a: readonly [number, string], b: readonly [number, string]): number {
+function positionOf(entry: Entry, sort: EntrySortKey): Position {
+  return [entry.kind === "folder" ? 0 : 1, sortValueOf(entry, sort), entry.name];
+}
+
+function compareNames(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** Folders first, whatever the order; the order applies to the value and to the name that breaks a tie. */
+function comparePositions(a: Position, b: Position, order: SortOrder): number {
   if (a[0] !== b[0]) return a[0] - b[0];
-  return a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0;
+  const ascending = a[1] !== b[1] ? a[1] - b[1] : compareNames(a[2], b[2]);
+  return order === "asc" ? ascending : -ascending;
 }
 
-function encodeCursor(entry: Entry): string {
-  return Buffer.from(JSON.stringify([rankOf(entry), entry.name])).toString("base64url");
+/**
+ * A cursor is the base64url of `sort:order:rank:value:name`. The name goes last and raw, so it is
+ * never escaped: at most 34 + 255 bytes, which is 386 characters, within the contract's 400.
+ */
+const CURSOR_PATTERN = /^([a-z]+):([a-z]+):([01]):(-?\d{1,16}):(.+)$/su;
+
+function encodeCursor(sort: EntrySortKey, order: SortOrder, [rank, value, name]: Position): string {
+  return Buffer.from(`${sort}:${order}:${rank}:${value}:${name}`, "utf8").toString("base64url");
 }
 
-function decodeCursor(cursor: string): readonly [number, string] {
-  let decoded: unknown;
-  try {
-    decoded = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
-  } catch {
+/** The position a cursor holds; a cursor made for another sort or order is refused. */
+function decodeCursor(cursor: string, sort: EntrySortKey, order: SortOrder): Position {
+  const [, cursorSort, cursorOrder, rank, value, name] = CURSOR_PATTERN.exec(Buffer.from(cursor, "base64url").toString("utf8")) ?? [];
+  const parsed = Number(value);
+  if (cursorSort !== sort || cursorOrder !== order || name === undefined || !Number.isSafeInteger(parsed)) {
     throw new InvalidEntriesCursorError();
   }
-  const result = cursorSchema.safeParse(decoded);
-  if (!result.success) throw new InvalidEntriesCursorError();
-  return result.data;
+  return [rank === "0" ? 0 : 1, parsed, name];
 }
 
 function childPath(folder: string, name: string): string {
@@ -184,18 +213,26 @@ function toEntry(entry: Entry): Entry {
 }
 
 /**
- * One page of a folder: folders first, then the rest, each by name; at most `limit`, then a cursor.
- * Share links list inside a shared folder with it too. Throws `InvalidEntriesCursorError`.
+ * One page of a folder: folders first, whatever the order, then the rest; each group by `sort` in
+ * `order`, ties broken by name in the same order; at most `limit`, then a cursor. Share links list
+ * inside a shared folder with it too. Throws `InvalidEntriesCursorError`.
  */
-export async function listEntries(folder: ContainedPath, { cursor, limit }: Omit<EntriesRequest, "path">): Promise<EntriesPage> {
-  const after = cursor === undefined ? undefined : decodeCursor(cursor);
+export async function listEntries(
+  folder: ContainedPath,
+  { sort, order, cursor, limit }: Omit<EntriesRequest, "path">,
+): Promise<EntriesPage> {
+  const after = cursor === undefined ? undefined : decodeCursor(cursor, sort, order);
   const sorted = (await list(folder))
-    .map(toEntry)
-    .toSorted((a, b) => compareEntries([rankOf(a), a.name], [rankOf(b), b.name]))
-    .filter((entry) => after === undefined || compareEntries([rankOf(entry), entry.name], after) > 0);
-  const entries = sorted.slice(0, limit);
-  const last = entries.at(-1);
-  return { path: folder.relative, entries, nextCursor: sorted.length > limit && last !== undefined ? encodeCursor(last) : null };
+    .map((entry) => ({ entry: toEntry(entry), position: positionOf(entry, sort) }))
+    .toSorted((a, b) => comparePositions(a.position, b.position, order))
+    .filter(({ position }) => after === undefined || comparePositions(position, after, order) > 0);
+  const page = sorted.slice(0, limit);
+  const last = page.at(-1);
+  return {
+    path: folder.relative,
+    entries: page.map(({ entry }) => entry),
+    nextCursor: sorted.length > limit && last !== undefined ? encodeCursor(sort, order, last.position) : null,
+  };
 }
 
 /** The tus metadata of an upload, as the client sent it (names as checked). */

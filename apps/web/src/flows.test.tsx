@@ -267,6 +267,18 @@ describe("recent sign-in", () => {
   });
 });
 
+describe("password settings", () => {
+  it("doesn't invite autofilling the current password, and marks the new ones as new", async () => {
+    stubApi(baseHandlers({ session: adminSession }));
+    renderApp("/settings/password");
+    await screen.findByRole("heading", { level: 1, name: "Account settings" });
+
+    expect((await screen.findByLabelText("Current password")).getAttribute("autocomplete")).toBe("off");
+    expect(screen.getByLabelText("New password").getAttribute("autocomplete")).toBe("new-password");
+    expect(screen.getByLabelText("Confirm new password").getAttribute("autocomplete")).toBe("new-password");
+  });
+});
+
 describe("wrong-role access", () => {
   it.each([
     ["user", userSession, "/admin/settings/security", "/files"],

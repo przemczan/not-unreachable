@@ -50,6 +50,7 @@ vi.mock("tus-js-client", () => {
 });
 
 const { uploadStoreFor } = await import("./upload-store.ts");
+const { entrySortStorageKey } = await import("./sort.ts");
 
 const modifiedAt = new Date(Date.now() - 2 * 3600 * 1000).toISOString();
 
@@ -101,10 +102,22 @@ function locationOf(router: { readonly state: { readonly location: { pathname: s
   return router.state.location.pathname + router.state.location.search;
 }
 
+/** Each listing's sort and order, as sent: "size desc". */
+function sortsSent(fetchMock: ReturnType<typeof stubApi>, route = "GET /api/v1/home/entries"): string[] {
+  return requestsTo(fetchMock, route).map(
+    (request) => `${request.url.searchParams.get("sort") ?? ""} ${request.url.searchParams.get("order") ?? ""}`,
+  );
+}
+
+function ariaSortOf(header: string): string | null {
+  return screen.getByRole("columnheader", { name: header }).getAttribute("aria-sort");
+}
+
 afterEach(() => {
   const store = uploadStoreFor(userSession.account.id);
   for (const record of store.getSnapshot()) store.cancel(record.id);
   tus.instances.length = 0;
+  localStorage.clear();
 });
 
 function query(path: string): string {
@@ -339,6 +352,113 @@ describe("file browser (user)", () => {
   });
 });
 
+describe("file browser sorting", () => {
+  it("lists by name A→Z with nothing remembered, shown on the Name header", async () => {
+    const fetchMock = stubApi(userHandlers());
+    renderApp("/files");
+    await screen.findByRole("table", { name: "Files" });
+
+    expect(sortsSent(fetchMock)).toEqual(["name asc"]);
+    expect(ariaSortOf("Name")).toBe("ascending");
+    expect(ariaSortOf("Size")).toBeNull();
+    expect(ariaSortOf("Modified")).toBeNull();
+    // Only the entry columns sort.
+    expect(within(screen.getByRole("columnheader", { name: "Actions" })).queryByRole("button")).toBeNull();
+  });
+
+  it("starts a column in its own order and flips the sorted one, listing again from the first page", async () => {
+    const fetchMock = stubApi(
+      userHandlers({
+        "GET /api/v1/home/entries": (request) =>
+          request.url.searchParams.get("cursor") === "next" ? json(200, page("", [holiday])) : json(200, page("", [docs, report], "next")),
+      }),
+    );
+    renderApp("/files");
+    await screen.findByRole("table", { name: "Files" });
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    await waitFor(() => expect(rowNames()).toEqual(["Docs", "report.pdf", "holiday.jpg"]));
+
+    fireEvent.click(screen.getByRole("button", { name: "Size" }));
+    await waitFor(() => expect(ariaSortOf("Size")).toBe("descending"));
+    await waitFor(() => expect(rowNames()).toEqual(["Docs", "report.pdf"]));
+    expect(ariaSortOf("Name")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Size" }));
+    await waitFor(() => expect(ariaSortOf("Size")).toBe("ascending"));
+    fireEvent.click(screen.getByRole("button", { name: "Modified" }));
+    await waitFor(() => expect(ariaSortOf("Modified")).toBe("descending"));
+    fireEvent.click(screen.getByRole("button", { name: "Name" }));
+    await waitFor(() => expect(ariaSortOf("Name")).toBe("ascending"));
+
+    // A new sort lists from its first page; back at name A→Z, its two cached pages are reloaded with their own cursor.
+    const sent = () =>
+      requestsTo(fetchMock, "GET /api/v1/home/entries").map((request) =>
+        ["sort", "order", "cursor"].map((name) => request.url.searchParams.get(name) ?? "-").join(" "),
+      );
+    await waitFor(() =>
+      expect(sent()).toEqual([
+        "name asc -",
+        "name asc next",
+        "size desc -",
+        "size asc -",
+        "modified desc -",
+        "name asc -",
+        "name asc next",
+      ]),
+    );
+  });
+
+  it("remembers the sort from folder to folder and across reloads", async () => {
+    const fetchMock = stubApi(userHandlers());
+    const first = renderApp("/files");
+    await screen.findByRole("table", { name: "Files" });
+    fireEvent.click(screen.getByRole("button", { name: "Modified" }));
+    await waitFor(() => expect(ariaSortOf("Modified")).toBe("descending"));
+    expect(JSON.parse(localStorage.getItem(entrySortStorageKey) ?? "null")).toEqual({ key: "modified", order: "desc" });
+
+    fireEvent.click(within(rowOf("Photos")).getByRole("link", { name: "Photos" }));
+    await screen.findByRole("table", { name: "Files / Photos" });
+    expect(ariaSortOf("Modified")).toBe("descending");
+
+    first.view.unmount();
+    renderApp("/files");
+    await screen.findByRole("table", { name: "Files" });
+    expect(ariaSortOf("Modified")).toBe("descending");
+    expect(sortsSent(fetchMock)).toEqual(["name asc", "modified desc", "modified desc", "modified desc"]);
+  });
+
+  it.each([
+    ["no JSON", "{size"],
+    ["an unknown column", JSON.stringify({ key: "owner", order: "asc" })],
+    ["an unknown order", JSON.stringify({ key: "size", order: "up" })],
+  ])("falls back to name A→Z when the stored sort has %s", async (_, stored) => {
+    localStorage.setItem(entrySortStorageKey, stored);
+    const fetchMock = stubApi(userHandlers());
+    renderApp("/files");
+    await screen.findByRole("table", { name: "Files" });
+
+    expect(ariaSortOf("Name")).toBe("ascending");
+    expect(sortsSent(fetchMock)).toEqual(["name asc"]);
+  });
+
+  it("still sorts when storage is refused", async () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new DOMException("Refused", "SecurityError");
+    });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("Refused", "SecurityError");
+    });
+    const fetchMock = stubApi(userHandlers());
+    renderApp("/files");
+    await screen.findByRole("table", { name: "Files" });
+    expect(ariaSortOf("Name")).toBe("ascending");
+
+    fireEvent.click(screen.getByRole("button", { name: "Name" }));
+    await waitFor(() => expect(ariaSortOf("Name")).toBe("descending"));
+    expect(sortsSent(fetchMock)).toEqual(["name asc", "name desc"]);
+  });
+});
+
 describe("file browser (admin)", () => {
   const media: Resource = {
     id: "5d0c5f8e-2b8a-4c47-9d1e-6a8f0b1c2d01",
@@ -402,6 +522,16 @@ describe("file browser (admin)", () => {
     expect(await screen.findByText("Folder deleted")).toBeDefined();
     const [request] = requestsTo(fetchMock, `DELETE ${entriesPath}`);
     expect(request?.url.searchParams.get("recursive")).toBe("true");
+  });
+
+  it("lists a resource in the remembered sort too", async () => {
+    localStorage.setItem(entrySortStorageKey, JSON.stringify({ key: "size", order: "desc" }));
+    const fetchMock = stubApi(adminHandlers());
+    renderApp(`/admin/files/${media.id}`);
+    await screen.findByRole("table", { name: "Media" });
+
+    expect(ariaSortOf("Size")).toBe("descending");
+    expect(sortsSent(fetchMock, `GET ${entriesPath}`)).toEqual(["size desc"]);
   });
 
   it("says when there is no resource to browse", async () => {

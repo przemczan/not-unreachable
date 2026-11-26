@@ -31,6 +31,7 @@ const una: User = {
       lastUsedAt: null,
     },
   ],
+  home: { resourceId: "3f4a5b6c-7d8e-4f90-a1b2-c3d4e5f60701", path: "homes/una" },
   createdAt: "2026-11-20T10:00:00.000Z",
   disabledAt: null,
 };
@@ -117,6 +118,35 @@ describe("Admin → Users", () => {
     expect(within(rowOf("Users", "Una User")).getByText("Google")).toBeDefined();
     expect(within(rowOf("Users", "Ola")).getByText("Disabled")).toBeDefined();
     expect(within(rowOf("Users", "Ola")).getByText("2.5 GB")).toBeDefined();
+  });
+
+  it("links each user's row to the files of their home, and disables it without a home", async () => {
+    const ola: User = { ...una, id: "5c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e02", username: "ola", displayName: "Ola", home: null };
+    stubApi(handlers([una, ola], []));
+    await openPage("/admin/users");
+
+    await screen.findByRole("table", { name: "Users" });
+    const browse = within(rowOf("Users", "Una User")).getByRole("link", { name: "Browse files of Una User" });
+    expect(browse.getAttribute("href")).toBe(`/admin/users/${una.id}/files`);
+
+    const none = within(rowOf("Users", "Ola")).getByRole("button", { name: "Browse files of Ola" });
+    expect(none.hasAttribute("disabled")).toBe(true);
+    expect(within(rowOf("Users", "Ola")).queryByRole("link", { name: "Browse files of Ola" })).toBeNull();
+    expect(within(rowOf("Users", "Ola")).getByRole("tooltip", { hidden: true }).textContent).toBe("No home folder");
+  });
+
+  it("opens a user's files from their row", async () => {
+    stubApi(
+      handlers([una], [], {
+        [`GET ${usersPath}/${una.id}`]: () => json(200, una),
+        "GET /api/v1/admin/resources": () => json(200, { resources: [], homeRoot: null }),
+      }),
+    );
+    await openPage("/admin/users");
+
+    await screen.findByRole("table", { name: "Users" });
+    fireEvent.click(within(rowOf("Users", "Una User")).getByRole("link", { name: "Browse files of Una User" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Files of Una User" })).toBeDefined();
   });
 
   it("offers to invite someone while there are no users", async () => {

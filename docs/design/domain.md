@@ -67,11 +67,18 @@ this glossary first.
 |---|---|
 | Files: every resource, browse, upload, download, delete, create share link | Files: own home only, browse, upload, download, delete |
 | Share links: list, edit expiry/password/access, revoke | Shared with me: the share links they can open; open one whose access lets them in |
-| Users: list, quota, disable, unlink a sign-in, send re-link link, remove (keep or delete files) | – |
+| Users: list, quota, disable, unlink a sign-in, send re-link link, remove (keep or delete files), browse a user's files | – |
+| Dashboard: counts, Recent uploads (users who uploaded in the last 7 days), recent activity | – |
 | Invitations: create, list, copy link, resend, revoke | – |
 | Resources: add/edit/remove local folder or SMB share, test, choose home root | – |
 | Settings: Email (SMTP), SSO providers, security policy, limits, retention | – |
 | Audit log: filter and read | – |
+
+The admin opens a user's home (`/admin/users/:id/files`) from Users or from the Dashboard's Recent
+uploads. It is the Files browser scoped to the home's folder in its resource: every operation goes
+through the admin file routes of that resource, so no user route changes and a user still reaches only
+their own home. The admin's uploads there are outside the user's quota, like all the admin's uploads,
+and Recent uploads counts only users' own successful uploads (`file.uploaded`), never the admin's.
 
 ## Server modules
 
@@ -136,7 +143,7 @@ modules/<name>/
 | 4 | `updates` | `update_checks`, `update_requests`; the check for new releases (GitHub, cached, every 6 hours, only while `UPDATE_CHECK` is on), the download into the spool, installing from Settings through the update helper (only while `UPDATE_FROM_UI` is on), recording `update.finished` once and its mail ([deployment.md](deployment.md#updating-from-settings)) | platform, audit, mail, resources (its `systemctl` runner) |
 | 4 | `files` | browse, Range downloads, delete, tus uploads (`uploads` table, staging, quotas, upload limits, hourly cleanup job) | accounts (`findById`, for `quota_bytes`), resources, storage, audit, settings |
 | 5 | `share-links` | `share_links`, `share_link_unlocks`, public share page API | files, storage, resources, accounts, audit |
-| 6 | `dashboard` | no tables; the admin Dashboard's counts, each one aggregate query in the module that owns the table (`countUsers`, `countPending`, `countByState`, `counts`) | accounts, invitations, resources, share-links |
+| 6 | `dashboard` | no tables; the admin Dashboard's counts, each one aggregate query in the module that owns the table (`countUsers`, `countPending`, `countByState`, `counts`), and Recent uploads from the audit log (`uploadersSince`) | accounts, audit, invitations, resources, share-links |
 
 `storage` sits on its own so its correctness can be proven alone. It knows
 nothing about accounts or roles: callers pass it a resource root (or a home)

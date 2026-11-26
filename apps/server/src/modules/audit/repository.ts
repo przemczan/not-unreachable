@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lt, or, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, gte, isNotNull, lt, max, or, type SQL } from "drizzle-orm";
 import type { Db } from "../platform/index.ts";
 import { auditEvents, type AuditEventRow } from "./schema.ts";
 
@@ -18,8 +18,17 @@ export interface AuditPosition {
   readonly id: string;
 }
 
+/** One account's successful uploads since a time: how many, and when the last one was. */
+export interface UploaderRow {
+  readonly accountId: string;
+  readonly uploads: number;
+  readonly lastUploadAt: string;
+}
+
 export interface AuditRepository {
   insert(row: AuditEventRow): void;
+  /** Accounts' own successful `file.uploaded` events at or after `since`, grouped by account, last upload newest first. */
+  uploadersSince(since: string): UploaderRow[];
   /** Newest first (`at`, then `id`, descending), after `after` when given. */
   page(filter: AuditRowFilter, after: AuditPosition | undefined, limit: number): AuditEventRow[];
   /** Newest first, at most `limit`. */
@@ -56,6 +65,27 @@ export function createAuditRepository(db: Db): AuditRepository {
   return {
     insert(row) {
       db.insert(auditEvents).values(row).run();
+    },
+    uploadersSince(since) {
+      const lastUploadAt = max(auditEvents.at);
+      const rows = db
+        .select({ accountId: auditEvents.actorAccountId, uploads: count(), lastUploadAt })
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.action, "file.uploaded"),
+            gte(auditEvents.at, since),
+            eq(auditEvents.outcome, "succeeded"),
+            eq(auditEvents.actorKind, "account"),
+            isNotNull(auditEvents.actorAccountId),
+          ),
+        )
+        .groupBy(auditEvents.actorAccountId)
+        .orderBy(desc(lastUploadAt), auditEvents.actorAccountId)
+        .all();
+      return rows.flatMap(({ accountId, uploads, lastUploadAt: last }) =>
+        accountId === null || last === null ? [] : [{ accountId, uploads, lastUploadAt: last }],
+      );
     },
     page(filter, after, limit) {
       const where = conditions(filter);

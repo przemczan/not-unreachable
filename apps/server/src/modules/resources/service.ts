@@ -35,12 +35,20 @@ import {
 } from "./errors.ts";
 import { definitionOf, type KindRefusal, type ResourceChangedField, type ResourceKindRegistry } from "./kinds.ts";
 import type { ResourceRowChange, ResourcesRepository } from "./repository.ts";
-import type { NewResourceRow, ResourceRow } from "./schema.ts";
+import type { HomeRow, NewResourceRow, ResourceRow } from "./schema.ts";
+
+const placeOf = (home: HomeRow): HomePlace => ({ resourceId: home.resourceId, path: home.path });
 
 export interface HomeRootChange {
   readonly resourceId: string;
   /** "" for the resource's top folder, else a relative path; missing folders are made. */
   readonly subpath: string;
+}
+
+/** Where a user's home is recorded: its resource, and its folder relative to that resource's root. */
+export interface HomePlace {
+  readonly resourceId: string;
+  readonly path: string;
 }
 
 /** How many resources are available and unavailable. */
@@ -96,6 +104,10 @@ export interface ResourcesService {
    * (`symlink`, `not-a-folder`) when something else holds the name.
    */
   createHome(username: string): Promise<RealPath>;
+  /** Where the user's home is recorded, without checking the folder; undefined when none is. */
+  homePlace(username: string): HomePlace | undefined;
+  /** Every recorded home's place by username, in one query. */
+  homePlaces(): ReadonlyMap<string, HomePlace>;
   /** Whether the user has a recorded home that is still a folder; false when its resource is unavailable too. */
   homeExists(username: string): Promise<boolean>;
   /**
@@ -410,6 +422,13 @@ export function createResourcesServiceWith({ repository, kinds, audit, clock, lo
       repository.insertHome({ username, resourceId: homeRoot.id, path: home.relative, createdAt: now() });
       return homeFor(username);
     },
+
+    homePlace(username) {
+      const home = repository.findHome(username);
+      return home === undefined ? undefined : placeOf(home);
+    },
+
+    homePlaces: () => new Map(repository.listHomes().map((home) => [home.username, placeOf(home)])),
 
     async homeExists(username) {
       try {

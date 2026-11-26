@@ -16,6 +16,16 @@ const signOut = (actor: AuditEventInput<"sign-out">["actor"] = alice): AuditEven
   details: {},
 });
 
+const uploaded = (
+  actor: AuditEventInput<"file.uploaded">["actor"],
+  outcome: AuditEventInput<"file.uploaded">["outcome"] = "succeeded",
+): AuditEventInput<"file.uploaded"> => ({
+  action: "file.uploaded",
+  actor,
+  outcome,
+  details: { resourceId: null, path: "a.txt", size: 1, onConflict: "fail" },
+});
+
 const query = (input: z.input<typeof auditPageQuerySchema> = {}) => auditPageQuerySchema.parse(input);
 
 const csvLines = (csv: string) => csv.split("\r\n").slice(0, -1);
@@ -295,6 +305,27 @@ describe("AuditService", () => {
       settings.set("auditRetentionDays", 30, null);
       expect(audit.purgeExpired()).toBe(1);
       expect(audit.list(query()).events.map((event) => event.action)).toEqual(["audit.purged", "audit.purged"]);
+    });
+  });
+
+  describe("uploadersSince", () => {
+    it("groups accounts' own successful uploads from `since` on, last upload newest first", () => {
+      audit.record(uploaded(bob)); // before `since`
+      clock.advance(1000);
+      const since = clock.now();
+      audit.record(uploaded(alice)); // exactly at `since`
+      clock.advance(1000);
+      audit.record(uploaded(bob));
+      audit.record(uploaded(bob, "failed"));
+      audit.record(uploaded({ kind: "system" }));
+      audit.record(signOut(alice));
+      clock.advance(1000);
+      audit.record(uploaded(bob));
+
+      expect(audit.uploadersSince(since)).toEqual([
+        { accountId: bob.accountId, uploads: 2, lastUploadAt: "2026-11-24T10:15:03.000Z" },
+        { accountId: alice.accountId, uploads: 1, lastUploadAt: "2026-11-24T10:15:01.000Z" },
+      ]);
     });
   });
 });

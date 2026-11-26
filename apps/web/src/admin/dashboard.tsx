@@ -1,11 +1,12 @@
-import type { Dashboard } from "@not-unreachable/contracts";
-import { Alert, Button, Card, EmptyState, PageHeader, Timeline } from "@not-unreachable/design-system";
+import { RECENT_UPLOADS_DAYS, type Dashboard, type RecentUploader } from "@not-unreachable/contracts";
+import { Alert, Avatar, Button, Card, EmptyState, PageHeader, Timeline } from "@not-unreachable/design-system";
 import { useQuery } from "@tanstack/react-query";
 import type * as React from "react";
 import { Link } from "react-router";
 import { api } from "../api/index.ts";
-import { problemMessage } from "../lib/index.ts";
+import { formatDay, formatTime, problemMessage } from "../lib/index.ts";
 import { auditTimelineGroups } from "./audit-events.tsx";
+import { userFilesHref } from "./user-files.tsx";
 
 /** How many of the newest audit events Recent activity shows. */
 export const RECENT_ACTIVITY_LIMIT = 5;
@@ -111,13 +112,60 @@ function LoadError({ title, error, onRetry }: LoadErrorProps) {
   );
 }
 
-function Counts() {
+/** One user of Recent uploads: who, how many uploads, and when the last one was. */
+function RecentUploaderRow({ uploader }: { readonly uploader: RecentUploader }) {
+  const { userId, username, displayName, uploads, lastUploadAt } = uploader;
+  return (
+    <li>
+      <Link
+        to={userFilesHref(userId)}
+        className="flex items-center gap-3 rounded-control px-2 py-2 text-fg-1 no-underline hover:bg-control-hover"
+      >
+        <Avatar name={displayName} size="sm" />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate font-medium">{displayName}</span>
+          <span className="truncate type-body-sm text-fg-3">{username}</span>
+        </span>
+        <span className="flex flex-none flex-col items-end">
+          <span className="type-body-sm tabular-nums">{plural(uploads, "upload", "uploads")}</span>
+          <time dateTime={lastUploadAt} className="type-body-sm text-fg-3 tabular-nums">
+            {`${formatDay(lastUploadAt)}, ${formatTime(lastUploadAt)}`}
+          </time>
+        </span>
+      </Link>
+    </li>
+  );
+}
+
+function RecentUploaders({ uploaders }: { readonly uploaders: readonly RecentUploader[] }) {
+  return (
+    <Card title="Recent uploads" subtitle={`Users who uploaded files in the last ${count.format(RECENT_UPLOADS_DAYS)} days.`}>
+      {uploaders.length === 0 ? (
+        <EmptyState compact icon="upload" title="No uploads this week" description="Users appear here as they upload files." />
+      ) : (
+        <ul aria-label="Recent uploads" className="m-0 flex list-none flex-col gap-1 p-0">
+          {uploaders.map((uploader) => (
+            <RecentUploaderRow key={uploader.userId} uploader={uploader} />
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+/** The counts and Recent uploads: both from the one Dashboard request. */
+function Summary() {
   const query = useQuery({ queryKey: dashboardQueryKey, queryFn: ({ signal }) => api("getDashboard", { signal }) });
   if (query.isPending) return <p className="m-0 type-body-sm text-fg-3">Loading counts…</p>;
   if (query.isError) {
     return <LoadError title="The counts could not be loaded" error={query.error} onRetry={() => void query.refetch()} />;
   }
-  return <StatCards dashboard={query.data} />;
+  return (
+    <>
+      <StatCards dashboard={query.data} />
+      <RecentUploaders uploaders={query.data.recentUploaders} />
+    </>
+  );
 }
 
 function RecentActivity() {
@@ -161,7 +209,7 @@ export function DashboardPage() {
   return (
     <>
       <PageHeader title="Dashboard" description="Your NotUnreachable at a glance." />
-      <Counts />
+      <Summary />
       <RecentActivity />
     </>
   );

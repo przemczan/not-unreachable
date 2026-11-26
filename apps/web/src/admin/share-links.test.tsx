@@ -69,6 +69,7 @@ function user(id: string, username: string, displayName: string, status: User["s
     status,
     quotaBytes: null,
     linkedSignIns: [],
+    home: null,
     createdAt: "2026-11-20T10:00:00.000Z",
     disabledAt: status === "disabled" ? "2026-11-21T10:00:00.000Z" : null,
   };

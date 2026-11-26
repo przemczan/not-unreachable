@@ -22,6 +22,17 @@ export const userLinkedSignInSchema = z.strictObject({
 
 export type UserLinkedSignIn = z.infer<typeof userLinkedSignInSchema>;
 
+/**
+ * Where a user's home is: its resource, and its folder relative to that resource's root. The admin
+ * opens it through the admin file routes of that resource.
+ */
+export const userHomeSchema = z.strictObject({
+  resourceId: z.uuid(),
+  path: z.string(),
+});
+
+export type UserHome = z.infer<typeof userHomeSchema>;
+
 /** A user (role `user`) as the admin's Users screen shows them. The admin's own account isn't one. */
 export const userSchema = z.strictObject({
   id: z.uuid(),
@@ -33,6 +44,8 @@ export const userSchema = z.strictObject({
   quotaBytes: quotaBytesSchema.nullable(),
   /** Oldest first. A user always has at least one, except for a moment while re-linking. */
   linkedSignIns: z.array(userLinkedSignInSchema),
+  /** Null when no home is recorded for the user. */
+  home: userHomeSchema.nullable(),
   createdAt: z.iso.datetime(),
   disabledAt: z.iso.datetime().nullable(),
 });

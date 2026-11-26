@@ -8,6 +8,22 @@ const dashboard: Dashboard = {
   pendingInvitations: 3,
   resources: { available: 4, unavailable: 1 },
   shareLinks: { active: 7, expired: 5, revoked: 1, locked: 2, downloads: 1234 },
+  recentUploaders: [
+    {
+      userId: "5c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e02",
+      username: "bob",
+      displayName: "Bob Builder",
+      uploads: 3,
+      lastUploadAt: "2026-11-24T10:15:00.000Z",
+    },
+    {
+      userId: "5c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e01",
+      username: "una",
+      displayName: "Una User",
+      uploads: 1,
+      lastUploadAt: "2026-11-23T09:00:00.000Z",
+    },
+  ],
 };
 
 function event(id: number, change: Partial<AuditEvent>): AuditEvent {
@@ -89,6 +105,42 @@ describe("Admin → Dashboard", () => {
 
     const requests = requestsTo(fetchMock, "GET /api/v1/admin/audit-events");
     expect(requests.map((request) => request.url.searchParams.get("limit"))).toEqual(["5"]);
+  });
+
+  it("shows the recent uploaders between the counts and Recent activity, each linking to their files", async () => {
+    const fetchMock = stubDashboard();
+    renderApp("/admin/dashboard");
+
+    const uploads = await screen.findByRole("region", { name: "Recent uploads" });
+    expect(within(uploads).getByText("Users who uploaded files in the last 7 days.")).toBeDefined();
+    const rows = within(uploads).getAllByRole("link");
+    expect(rows.map((row) => row.getAttribute("href"))).toEqual([
+      "/admin/users/5c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e02/files",
+      "/admin/users/5c1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e01/files",
+    ]);
+    const bob = within(uploads).getByRole("link", { name: /Bob Builder/ });
+    expect(within(bob).getByText("bob")).toBeDefined();
+    expect(within(bob).getByText("3 uploads")).toBeDefined();
+    expect(bob.querySelector("time")?.getAttribute("datetime")).toBe("2026-11-24T10:15:00.000Z");
+    const una = within(uploads).getByRole("link", { name: /Una User/ });
+    expect(within(una).getByText("1 upload")).toBeDefined();
+
+    // Counts, then Recent uploads, then Recent activity.
+    const users = screen.getByRole("region", { name: "Users" });
+    const activity = screen.getByRole("region", { name: "Recent activity" });
+    expect(users.compareDocumentPosition(uploads) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(uploads.compareDocumentPosition(activity) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // From the Dashboard's own answer: no request of its own.
+    expect(requestsTo(fetchMock, "GET /api/v1/admin/dashboard")).toHaveLength(1);
+  });
+
+  it("says when nobody uploaded lately", async () => {
+    stubApi(baseHandlers({ session: adminSession }));
+    renderApp("/admin/dashboard");
+
+    const uploads = await screen.findByRole("region", { name: "Recent uploads" });
+    expect(within(uploads).getByText("No uploads this week")).toBeDefined();
+    expect(within(uploads).queryByRole("link")).toBeNull();
   });
 
   it("shows a new instance's zero counts and no activity", async () => {

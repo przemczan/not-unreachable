@@ -9,10 +9,12 @@ import {
   EmptyState,
   Icon,
   IconButton,
+  IconButtonLink,
   Input,
   Menu,
   PageHeader,
   Tabs,
+  Tooltip,
   useToast,
   type DataTableColumn,
   type MenuItem,
@@ -37,6 +39,7 @@ import {
   quotaInvalidMessage,
   usersQueryKey,
 } from "./user-dialogs.tsx";
+import { userFilesHref } from "./user-files.tsx";
 
 const tabs: TabItem[] = [
   { value: "users", label: "Users", href: "/admin/users" },
@@ -181,11 +184,14 @@ function UsersTab({ onInvite }: UsersTabProps) {
       header: <span className="sr-only">Actions</span>,
       align: "right",
       render: (user) => (
-        <Menu
-          width={300}
-          trigger={<IconButton label={`Actions for ${user.displayName}`} size="sm" icon={<Icon name="more-horizontal" size={16} />} />}
-          items={actionsOf(user)}
-        />
+        <span className="inline-flex items-center gap-1">
+          <BrowseFilesButton user={user} />
+          <Menu
+            width={300}
+            trigger={<IconButton label={`Actions for ${user.displayName}`} size="sm" icon={<Icon name="more-horizontal" size={16} />} />}
+            items={actionsOf(user)}
+          />
+        </span>
       ),
     },
   ];
@@ -221,6 +227,21 @@ function UsersTab({ onInvite }: UsersTabProps) {
       {open?.kind === "remove" && <RemoveUserDialog user={open.user} onClose={close} />}
     </div>
   );
+}
+
+/** A row's link to the files of the user's home; disabled when no home is recorded. */
+function BrowseFilesButton({ user }: { readonly user: User }) {
+  const label = `Browse files of ${user.displayName}`;
+  const icon = <Icon name="folder" size={16} />;
+  if (user.home === null) {
+    return (
+      <Tooltip content="No home folder">
+        <IconButton label={label} size="sm" icon={icon} disabled />
+      </Tooltip>
+    );
+  }
+  // The shell follows links to /admin pages with the router.
+  return <IconButtonLink href={userFilesHref(user.id)} label={label} size="sm" icon={icon} />;
 }
 
 function DefaultQuotaCard({ defaultQuotaBytes }: { readonly defaultQuotaBytes: number }) {

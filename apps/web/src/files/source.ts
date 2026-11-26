@@ -1,5 +1,6 @@
-import { routes, type EntriesPage, type Entry } from "@not-unreachable/contracts";
+import { routes, type EntriesPage, type Entry, type UserHome } from "@not-unreachable/contracts";
 import { api, buildPath, buildQuery } from "../api/index.ts";
+import { segmentsOf } from "./paths.ts";
 import type { EntrySort } from "./sort.ts";
 import type { UploadTarget } from "./upload-store.ts";
 
@@ -51,4 +52,35 @@ export function resourceSource(resourceId: string): FileSource {
     contentUrl: (path) => buildPath(routes.downloadResourceFile.path, params) + buildQuery({ path }),
     uploadTarget: (folder) => ({ folder, resourceId }),
   };
+}
+
+/** A path's segments, without the `.` and `..` that could climb out of a folder. */
+function plainSegmentsOf(path: string): string[] {
+  return segmentsOf(path).filter((segment) => segment !== "." && segment !== "..");
+}
+
+/**
+ * A resource source narrowed to one of its folders, such as a user's home: its top folder ("") is
+ * that folder, and no path reaches above it. Its query key stays under the resource's, so a change
+ * anywhere in the resource reloads it too.
+ */
+export function scopedSource(source: FileSource, folder: string): FileSource {
+  const scope = plainSegmentsOf(folder);
+  const inScope = (path: string) => [...scope, ...plainSegmentsOf(path)].join("/");
+  return {
+    queryKey: [...source.queryKey, "folder", scope.join("/")],
+    list: async (path, sort, cursor, signal) => {
+      const page = await source.list(inScope(path), sort, cursor, signal);
+      return { ...page, path: segmentsOf(page.path).slice(scope.length).join("/") };
+    },
+    createFolder: (path, name) => source.createFolder(inScope(path), name),
+    remove: (path, recursive) => source.remove(inScope(path), recursive),
+    contentUrl: (path) => source.contentUrl(inScope(path)),
+    uploadTarget: (target) => source.uploadTarget(inScope(target)),
+  };
+}
+
+/** A user's home folder, browsed by the admin through the routes of the home's resource. */
+export function userHomeSource(home: UserHome): FileSource {
+  return scopedSource(resourceSource(home.resourceId), home.path);
 }

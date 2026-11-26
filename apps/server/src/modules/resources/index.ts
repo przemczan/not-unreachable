@@ -102,7 +102,7 @@ export {
 } from "./mount-runner.ts";
 export { createAllowFolderHandlers, createResourcesHandlers, type AllowFolderRoutes, type ResourcesRoutes } from "./routes.ts";
 export { homes, resources, type ResourceRow } from "./schema.ts";
-export type { HomeRootChange, ResourceCounts, ResourcesService } from "./service.ts";
+export type { HomePlace, HomeRootChange, ResourceCounts, ResourcesService } from "./service.ts";
 export { createSmbShareKind, type SmbShareDependencies } from "./smb-share.ts";
 export {
   addFolderToDropIn,

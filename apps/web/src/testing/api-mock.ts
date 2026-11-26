@@ -62,6 +62,7 @@ export const emptyDashboard: Dashboard = {
   pendingInvitations: 0,
   resources: { available: 0, unavailable: 0 },
   shareLinks: { active: 0, expired: 0, revoked: 0, locked: 0, downloads: 0 },
+  recentUploaders: [],
 };
 
 export interface BaseApiOptions {

@@ -15,7 +15,7 @@ import type { AccountRecord, AccountsService } from "../accounts/index.ts";
 import type { AuditService } from "../audit/index.ts";
 import type { MailService } from "../mail/index.ts";
 import type { Clock, Logger } from "../platform/index.ts";
-import { ResourceUnavailableError, type ResourcesService } from "../resources/index.ts";
+import { ResourceUnavailableError, type HomePlace, type ResourcesService } from "../resources/index.ts";
 import type { SessionsService } from "../sessions/index.ts";
 import type { SettingsService } from "../settings/index.ts";
 import type { LinkedSignInsService } from "../sso/index.ts";
@@ -50,7 +50,7 @@ export interface UsersServiceDependencies {
   readonly accounts: Pick<AccountsService, "findById" | "listUsers" | "setStatus" | "setQuota" | "deleteAccount">;
   readonly sessions: Pick<SessionsService, "revokeAll">;
   readonly linkedSignIns: Pick<LinkedSignInsService, "list" | "unlink" | "removeAll">;
-  readonly resources: Pick<ResourcesService, "homeExists" | "removeHome" | "forgetHome">;
+  readonly resources: Pick<ResourcesService, "homePlace" | "homePlaces" | "homeExists" | "removeHome" | "forgetHome">;
   readonly settings: SettingsService;
   readonly mail: Pick<MailService, "isConfigured" | "send">;
   readonly audit: AuditService;
@@ -90,7 +90,7 @@ export function createUsersService({
     return account;
   };
 
-  const toUser = (account: AccountRecord): User => ({
+  const toUser = (account: AccountRecord, home: HomePlace | undefined): User => ({
     id: account.id,
     username: account.username,
     email: account.email,
@@ -106,9 +106,12 @@ export function createUsersService({
       createdAt: link.createdAt,
       lastUsedAt: link.lastUsedAt,
     })),
+    home: home === undefined ? null : { resourceId: home.resourceId, path: home.path },
     createdAt: account.createdAt,
     disabledAt: account.disabledAt,
   });
+
+  const userOf = (account: AccountRecord): User => toUser(account, resources.homePlace(account.username));
 
   const changeStatus = (account: AccountRecord, status: AccountRecord["status"], context: AdminContext): void => {
     if (status === account.status) return;
@@ -150,15 +153,21 @@ export function createUsersService({
   };
 
   return {
-    list: () => ({ users: accounts.listUsers().map(toUser), defaultQuotaBytes: settings.get("defaultQuotaBytes") }),
+    list() {
+      const homes = resources.homePlaces();
+      return {
+        users: accounts.listUsers().map((account) => toUser(account, homes.get(account.username))),
+        defaultQuotaBytes: settings.get("defaultQuotaBytes"),
+      };
+    },
 
-    get: (id) => toUser(findUser(id)),
+    get: (id) => userOf(findUser(id)),
 
     change(id, change, context) {
       const account = findUser(id);
       if (change.status !== undefined) changeStatus(account, change.status, context);
       if (change.quotaBytes !== undefined) changeQuota(account, change.quotaBytes, context);
-      return toUser(findUser(id));
+      return userOf(findUser(id));
     },
 
     async remove(id, homeFolder, context) {

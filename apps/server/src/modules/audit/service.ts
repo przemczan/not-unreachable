@@ -11,7 +11,7 @@ import { DAY_MS, newId, type Clock, type Logger } from "../platform/index.ts";
 import type { SettingsService } from "../settings/index.ts";
 import { toCsv } from "./csv.ts";
 import { auditDetailsSchemas, type AuditEventInput } from "./events.ts";
-import type { AuditPosition, AuditRepository, AuditRowFilter } from "./repository.ts";
+import type { AuditPosition, AuditRepository, AuditRowFilter, UploaderRow } from "./repository.ts";
 import type { AuditEventRow } from "./schema.ts";
 
 export const USER_AGENT_MAX_CHARACTERS = 256;
@@ -52,6 +52,11 @@ export interface AuditService {
   exportCsv(filter: AuditFilter): string;
   /** Deletes events older than the retention setting and records `audit.purged`; answers how many. */
   purgeExpired(): number;
+  /**
+   * The accounts that uploaded files themselves at or after `since` (successful `file.uploaded`
+   * events they are the actor of), with how many and when the last was, last upload newest first.
+   */
+  uploadersSince(since: Date): UploaderRow[];
 }
 
 const cursorSchema = z.tuple([z.iso.datetime(), z.uuid()]);
@@ -154,6 +159,10 @@ export function createAuditServiceWith(repository: AuditRepository, clock: Clock
       const count = repository.deleteBefore(before);
       service.record({ action: "audit.purged", actor: { kind: "system" }, outcome: "succeeded", details: { count, before } });
       return count;
+    },
+
+    uploadersSince(since) {
+      return repository.uploadersSince(since.toISOString());
     },
   };
   return service;

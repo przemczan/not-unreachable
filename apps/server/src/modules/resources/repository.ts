@@ -40,6 +40,7 @@ export interface ResourcesRepository {
   deleteResource(id: string): void;
 
   findHome(username: string): HomeRow | undefined;
+  listHomes(): HomeRow[];
   /** Answers whether any home lives in the resource. */
   holdsHomes(resourceId: string): boolean;
   /** Inserts the home unless one is already recorded for the user. */
@@ -76,6 +77,7 @@ export function createResourcesRepository(db: Db): ResourcesRepository {
     },
 
     findHome: (username) => db.select().from(homes).where(eq(homes.username, username)).get(),
+    listHomes: () => db.select().from(homes).all(),
     holdsHomes: (resourceId) =>
       db.select({ username: homes.username }).from(homes).where(eq(homes.resourceId, resourceId)).limit(1).get() !== undefined,
     insertHome(row) {

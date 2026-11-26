@@ -68,9 +68,10 @@ const remove = (homeFolder: "keep" | "delete", cookie = adminCookie) =>
   callRoute(test, routes.removeUser, { cookie, params: bob.id, payload: { homeFolder } });
 
 describe("Users (the admin's tab)", () => {
-  it("lists the users oldest first, with their linked sign-ins and the default quota, never the admin", async () => {
+  it("lists the users oldest first, with their linked sign-ins, their home and the default quota, never the admin", async () => {
     test.clock.advance(1000);
     test.createUser({ username: "carol", email: "carol@example.com" });
+    const homeRoot = test.services.resources.list().homeRoot;
     const listed = (await callRoute(test, routes.listUsers, { cookie: adminCookie })).json<Users>();
     expect(listed.defaultQuotaBytes).toBe(10 * 1024 ** 3);
     expect(listed.users.map((user) => user.username)).toEqual(["bob", "carol"]);
@@ -92,9 +93,12 @@ describe("Users (the admin's tab)", () => {
           lastUsedAt: null,
         },
       ],
+      home: { resourceId: homeRoot?.resourceId, path: "bob" },
       createdAt: bob.createdAt,
       disabledAt: null,
     });
+    // carol has no home recorded yet.
+    expect(listed.users[1]?.home).toBeNull();
     expect((await callRoute(test, routes.getUser, { cookie: adminCookie, params: bob.id })).json<User>()).toEqual(listed.users[0]);
   });
 

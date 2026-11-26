@@ -220,6 +220,8 @@ export function createServices({
   });
   const dashboard = createDashboardService({
     accounts,
+    audit,
+    clock,
     invitations: invitations.invitations,
     resources,
     shareLinks: shareLinks.shareLinks,

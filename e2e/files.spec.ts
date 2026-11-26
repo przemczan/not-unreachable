@@ -280,3 +280,34 @@ test("a user uploads with pause and resume across a reload, downloads and delete
 
   expect(errors).toEqual([]);
 });
+
+test("the admin opens a user's home from Users and sees the files they uploaded", async ({ page }) => {
+  expect(resourceId).not.toBe("");
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+
+  await signInAsAdmin(page);
+  await page.goto("/admin/users");
+  // Every seeded user is "Una User": the username tells this one's row apart.
+  const row = rowOf(page, "Users", username);
+  await screenshot(page, "admin-users-browse-files");
+  await row.getByRole("link", { name: "Browse files of Una User" }).click();
+
+  await expect(page).toHaveURL(new RegExp("^[^?]*/admin/users/[0-9a-f-]+/files$"));
+  const userFilesUrl = page.url();
+  await expect(page.getByRole("heading", { level: 1, name: "Files of Una User" })).toBeVisible();
+  await expect(page.getByText(`The home folder of ${username}, in ${resourceName}.`)).toBeVisible();
+  await expect(rowOf(page, "Una User", "todo.txt")).toBeVisible();
+  await screenshot(page, "admin-user-files");
+  await expectDownload(page, "Una User", "todo.txt", Buffer.from("buy milk\n"));
+
+  // The user uploaded this week, so the Dashboard's Recent uploads lists them and links to the same page.
+  await page.goto("/admin/dashboard");
+  const recentUploads = page.getByRole("list", { name: "Recent uploads" });
+  await expect(recentUploads.getByText(username)).toBeVisible();
+  await screenshot(page, "admin-dashboard-recent-uploads");
+  await recentUploads.getByRole("link", { name: new RegExp(username) }).click();
+  await expect(page).toHaveURL(userFilesUrl);
+
+  expect(errors).toEqual([]);
+});

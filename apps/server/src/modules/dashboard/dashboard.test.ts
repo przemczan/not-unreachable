@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { dashboardSchema, problemTypes, routes, type Dashboard } from "@not-unreachable/contracts";
+import { dashboardSchema, problemTypes, RECENT_UPLOADERS_LIMIT, routes, type Dashboard } from "@not-unreachable/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   buildShareLinksTestApp,
@@ -9,8 +9,10 @@ import {
   expectProblem,
   makeStorageRoot,
   systemContext,
+  tusClient,
   type ShareLinksTestApp,
 } from "../../test-support/index.ts";
+import type { AccountRecord } from "../accounts/index.ts";
 import { DAY_MS, MINUTE_MS } from "../platform/index.ts";
 
 const HOUR_MS = 60 * MINUTE_MS;
@@ -74,6 +76,7 @@ describe("the admin Dashboard", () => {
       pendingInvitations: 1,
       resources: { available: 2, unavailable: 1 },
       shareLinks: { active: 2, expired: 1, revoked: 1, locked: 1, downloads: 7 },
+      recentUploaders: [],
     });
 
     // Once the lock is over, the link is no longer counted locked.
@@ -87,6 +90,73 @@ describe("the admin Dashboard", () => {
       pendingInvitations: 0,
       resources: { available: 2, unavailable: 0 },
       shareLinks: { active: 0, expired: 0, revoked: 0, locked: 0, downloads: 0 },
+      recentUploaders: [],
+    });
+  });
+
+  const upload = async (account: AccountRecord, name: string, target?: { resourceId: string; folder: string }) => {
+    const response = await tusClient(app.test, app.test.startSession(account)).upload(Buffer.from(name), {
+      name,
+      onConflict: "fail",
+      ...target,
+    });
+    expect(response.statusCode).toBe(204);
+  };
+
+  describe("Recent uploads", () => {
+    it("lists users' own uploads of the last 7 days, last upload newest first, with how many and when", async () => {
+      const bob = (await app.addUser("bob")).account;
+      const carol = (await app.addUser("carol")).account;
+      const dave = (await app.addUser("dave")).account;
+      const eve = (await app.addUser("eve")).account;
+      const start = app.test.clock.now().getTime();
+
+      await upload(bob, "old.txt");
+      app.test.clock.advance(1);
+      const daveUploadedAt = app.test.clock.now().toISOString();
+      await upload(dave, "edge.txt");
+      app.test.clock.advance(DAY_MS);
+      await upload(app.user, "first.txt");
+      app.test.clock.advance(MINUTE_MS);
+      const aliceUploadedAt = app.test.clock.now().toISOString();
+      await upload(app.user, "second.txt");
+
+      // Neither the admin's uploads (into carol's home or a resource) nor a failed upload count.
+      const homesResourceId = app.test.services.resources.list().homeRoot?.resourceId ?? "";
+      await upload(app.admin, "from-admin.txt", { resourceId: homesResourceId, folder: "carol" });
+      await upload(app.admin, "shared.txt", { resourceId: app.resourceId, folder: "" });
+      app.test.services.audit.record({
+        action: "file.uploaded",
+        actor: { kind: "account", accountId: carol.id, username: carol.username },
+        outcome: "failed",
+        details: { resourceId: null, path: "failed.txt", size: 1, onConflict: "fail" },
+      });
+      // A removed user drops out.
+      await upload(eve, "gone.txt");
+      app.test.services.accounts.deleteAccount(eve.id);
+
+      // dave's upload is exactly 7 days old, bob's a moment older.
+      app.test.clock.advance(start + 7 * DAY_MS + 1 - app.test.clock.now().getTime());
+      expect((await read()).recentUploaders).toEqual([
+        { userId: app.user.id, username: "alice", displayName: app.user.displayName, uploads: 2, lastUploadAt: aliceUploadedAt },
+        { userId: dave.id, username: "dave", displayName: dave.displayName, uploads: 1, lastUploadAt: daveUploadedAt },
+      ]);
+    });
+
+    it(`lists at most ${RECENT_UPLOADERS_LIMIT} users, dropping the longest ago`, async () => {
+      const users = [app.user];
+      for (let index = 1; index <= RECENT_UPLOADERS_LIMIT; index += 1) users.push((await app.addUser(`user${index}`)).account);
+      for (const user of users) {
+        await upload(user, "file.txt");
+        app.test.clock.advance(MINUTE_MS);
+      }
+      const listed = (await read()).recentUploaders.map((uploader) => uploader.username);
+      expect(listed).toEqual(
+        users
+          .slice(1)
+          .map((user) => user.username)
+          .toReversed(),
+      );
     });
   });
 

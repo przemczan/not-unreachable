@@ -8,6 +8,7 @@ import { AdminFilesPage } from "./files.tsx";
 import { ResourcesPage } from "./resources.tsx";
 import { AdminSettingsPage } from "./settings.tsx";
 import { ShareLinksPage } from "./share-links.tsx";
+import { UserFilesPage } from "./user-files.tsx";
 import { UsersPage } from "./users.tsx";
 
 /** The pages under /admin, by their first segment: the Sidebar item and the breadcrumb. */
@@ -45,6 +46,7 @@ export function Component() {
           <Route path="resources" element={<ResourcesPage />} />
           <Route path="settings/*" element={<AdminSettingsPage />} />
           <Route path="share-links" element={<ShareLinksPage />} />
+          <Route path="users/:userId/files" element={<UserFilesPage />} />
           <Route path="users/*" element={<UsersPage />} />
           <Route path="*" element={<AdminNotFound />} />
         </Routes>

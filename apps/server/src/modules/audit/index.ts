@@ -12,6 +12,7 @@ export {
   type AuditOrigin,
   type AuditTarget,
 } from "./events.ts";
+export type { UploaderRow } from "./repository.ts";
 export { AUDIT_RETENTION_JOB, scheduleAuditRetention } from "./retention.ts";
 export { createAuditHandlers, type AuditRoutes } from "./routes.ts";
 export { auditEvents, type AuditEventRow } from "./schema.ts";
